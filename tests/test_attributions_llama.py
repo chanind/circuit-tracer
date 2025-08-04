@@ -2,6 +2,7 @@ import os
 import sys
 
 import numpy as np
+import pytest
 import torch
 import torch.nn as nn
 from torch import device
@@ -200,16 +201,19 @@ def verify_llama_3_2_1b(s: str):
     verify_feature_edges(model, graph)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_small_llama_model():
     s = torch.tensor([10, 3, 4, 3, 2, 5, 3, 8])
     verify_small_llama_model(s)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_large_llama_model():
     s = torch.tensor([0, 113, 24, 53, 27])
     verify_large_llama_model(s)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_llama_3_2_1b():
     s = "The National Digital Analytics Group (ND"
     verify_llama_3_2_1b(s)
