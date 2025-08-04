@@ -1,7 +1,7 @@
 from collections import defaultdict
 from contextlib import contextmanager
 from functools import partial
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import torch
 from torch import nn
@@ -52,11 +52,12 @@ class ReplacementUnembed(nn.Module):
 
 class ReplacementModel(HookedTransformer):
     d_transcoder: int
-    transcoders: nn.ModuleList
+    transcoders: Sequence[Any]
     feature_input_hook: str
     feature_output_hook: str
     skip_transcoder: bool
     scan: Optional[Union[str, List[str]]]
+    blocks: Sequence[Any]
 
     @classmethod
     def from_config(
@@ -93,7 +94,7 @@ class ReplacementModel(HookedTransformer):
         transcoders: Dict[int, SingleLayerTranscoder],
         feature_input_hook: str = "mlp.hook_in",
         feature_output_hook: str = "mlp.hook_out",
-        scan: str = None,
+        scan: str | None = None,
         **kwargs,
     ) -> "ReplacementModel":
         """Create a ReplacementModel from the name of HookedTransformer and dict of transcoders
@@ -127,8 +128,8 @@ class ReplacementModel(HookedTransformer):
         cls,
         model_name: str,
         transcoder_set: str,
-        device: Optional[torch.device] = torch.device("cuda"),
-        dtype: Optional[torch.dtype] = torch.float32,
+        device: torch.device = torch.device("cuda"),
+        dtype: torch.dtype = torch.float32,
         **kwargs,
     ) -> "ReplacementModel":
         """Create a ReplacementModel from the name of HookedTransformer and dict of transcoders
@@ -204,7 +205,7 @@ class ReplacementModel(HookedTransformer):
                 block.ln1_post.hook_scale.add_hook(stop_gradient, is_permanent=True)
             if hasattr(block, "ln2_post"):
                 block.ln2_post.hook_scale.add_hook(stop_gradient, is_permanent=True)
-            self.ln_final.hook_scale.add_hook(stop_gradient, is_permanent=True)
+            self.ln_final.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
 
         for param in self.parameters():
             param.requires_grad = False
@@ -213,7 +214,7 @@ class ReplacementModel(HookedTransformer):
             acts.requires_grad = True
             return acts
 
-        self.hook_embed.add_hook(enable_gradient, is_permanent=True)
+        self.hook_embed.add_hook(enable_gradient, is_permanent=True)  # type: ignore
 
     def _configure_skip_connection(self, block, transcoder):
         cached = {}
@@ -328,7 +329,7 @@ class ReplacementModel(HookedTransformer):
             zero_bos=zero_bos,
             apply_activation_function=apply_activation_function,
         )
-        with torch.inference_mode(), self.hooks(activation_hooks):
+        with torch.inference_mode(), self.hooks(activation_hooks):  # type: ignore
             logits = self(inputs)
         activation_cache = torch.stack(activation_cache)
         if sparse:
@@ -367,17 +368,17 @@ class ReplacementModel(HookedTransformer):
             assert tokens.ndim == 1, "Tokens must be a 1D tensor"
         else:
             assert isinstance(inputs, str), "Inputs must be a string"
-            tokenized = self.tokenizer(inputs, return_tensors="pt").input_ids.to(self.cfg.device)
+            tokenized = self.tokenizer(inputs, return_tensors="pt").input_ids.to(self.cfg.device)  # type: ignore
             tokens = tokenized.squeeze(0)
 
         special_tokens = []
-        for special_token in self.tokenizer.special_tokens_map.values():
+        for special_token in self.tokenizer.special_tokens_map.values():  # type: ignore
             if isinstance(special_token, list):
                 special_tokens.extend(special_token)
             else:
                 special_tokens.append(special_token)
 
-        special_token_ids = self.tokenizer.convert_tokens_to_ids(special_tokens)
+        special_token_ids = self.tokenizer.convert_tokens_to_ids(special_tokens)  # type: ignore
         zero_bos = (
             zero_bos and tokens[0].cpu().item() in special_token_ids
         )  # == self.tokenizer.bos_token_id
@@ -418,7 +419,8 @@ class ReplacementModel(HookedTransformer):
 
         # note: activation_hooks must come before error_hooks
         logits = self.run_with_hooks(
-            tokens, fwd_hooks=activation_hooks + mlp_in_caching_hooks + error_hooks
+            tokens,
+            fwd_hooks=activation_hooks + mlp_in_caching_hooks + error_hooks,  # type: ignore
         )
 
         if zero_bos:
@@ -585,14 +587,17 @@ class ReplacementModel(HookedTransformer):
         all_hooks += activation_hooks + intervention_hooks
 
         cached_logits = [None]  # Use a list so we can mutate it
+
         def logit_cache_hook(activations, hook):
             # we need to manually apply the softcap (if used by the model), as it comes post-hook
             if self.cfg.output_logits_soft_cap > 0.0:
                 cached_logits[0] = self.cfg.output_logits_soft_cap * F.tanh(
-                        activations / self.cfg.output_logits_soft_cap)
+                    activations / self.cfg.output_logits_soft_cap
+                )
             else:
                 cached_logits[0] = activations.clone()
-        all_hooks.append(('unembed.hook_post', logit_cache_hook))
+
+        all_hooks.append(("unembed.hook_post", logit_cache_hook))
 
         return all_hooks, cached_logits, activation_cache
 
@@ -636,7 +641,7 @@ class ReplacementModel(HookedTransformer):
 
         hooks, _, activation_cache = feature_intervention_hook_output
 
-        with self.hooks(hooks):
+        with self.hooks(hooks):  # type: ignore
             logits = self(inputs)
 
         activation_cache = torch.stack(activation_cache)

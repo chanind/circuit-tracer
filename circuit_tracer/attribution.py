@@ -65,7 +65,7 @@ class AttributionContext:
 
     def __init__(
         self,
-        activation_matrix: torch.sparse.Tensor,
+        activation_matrix: torch.Tensor,
         error_vectors: torch.Tensor,
         token_vectors: torch.Tensor,
         decoder_vecs: torch.Tensor,
@@ -127,7 +127,7 @@ class AttributionContext:
 
     def _make_attribution_hooks(
         self,
-        activation_matrix: torch.sparse.Tensor,
+        activation_matrix: torch.Tensor,
         error_vectors: torch.Tensor,
         token_vectors: torch.Tensor,
         decoder_vecs: torch.Tensor,
@@ -149,7 +149,7 @@ class AttributionContext:
                 f"blocks.{layer}.{feature_output_hook}",
                 decoder_vecs[start:end],
                 write_index=np.s_[start:end],
-                read_index=np.s_[:, nnz_positions[start:end]],
+                read_index=np.s_[:, nnz_positions[start:end]],  # type: ignore
             )
             for layer, (start, end) in enumerate(layer_spans)
             if start != end
@@ -184,8 +184,8 @@ class AttributionContext:
     def install_hooks(self, model: "ReplacementModel"):
         """Context manager instruments the hooks for the forward and backward passes."""
         with model.hooks(
-            fwd_hooks=self._caching_hooks(model.feature_input_hook),
-            bwd_hooks=self._attribution_hooks,
+            fwd_hooks=self._caching_hooks(model.feature_input_hook),  # type: ignore
+            bwd_hooks=self._attribution_hooks,  # type: ignore
         ):
             yield
 
@@ -211,7 +211,7 @@ class AttributionContext:
             torch.Tensor: ``(batch, row_size)`` matrix - one row per node.
         """
 
-        batch_size = self._resid_activations[0].shape[0]
+        batch_size = self._resid_activations[0].shape[0]  # type: ignore
         self._batch_buffer = torch.zeros(
             self._row_size,
             batch_size,
@@ -240,7 +240,7 @@ class AttributionContext:
                 pos_indices=positions[mask],
                 values=inject_values[mask],
             )
-            handles.append(self._resid_activations[int(layer)].register_hook(fn))
+            handles.append(self._resid_activations[int(layer)].register_hook(fn))  # type: ignore
 
         try:
             last_layer = max(layers_in_batch)
@@ -290,9 +290,7 @@ def compute_salient_logits(
 
 
 @torch.no_grad()
-def select_scaled_decoder_vecs(
-    activations: torch.sparse.Tensor, transcoders: Sequence
-) -> torch.Tensor:
+def select_scaled_decoder_vecs(activations: torch.Tensor, transcoders: Sequence) -> torch.Tensor:
     """Return decoder rows for **active** features only.
 
     The return value is already scaled by the feature activation, making it
@@ -307,9 +305,7 @@ def select_scaled_decoder_vecs(
 
 
 @torch.no_grad()
-def select_encoder_rows(
-    activation_matrix: torch.sparse.Tensor, transcoders: Sequence
-) -> torch.Tensor:
+def select_encoder_rows(activation_matrix: torch.Tensor, transcoders: Sequence) -> torch.Tensor:
     """Return encoder rows for **active** features only."""
 
     rows: List[torch.Tensor] = []
@@ -415,7 +411,8 @@ def attribute(
         for reload_handle in offload_handles:
             reload_handle()
 
-        logger.removeHandler(handler)
+        if handler is not None:
+            logger.removeHandler(handler)
 
 
 def _run_attribution(
@@ -428,8 +425,8 @@ def _run_attribution(
     offload,
     verbose,
     offload_handles,
+    logger,
     update_interval=4,
-    logger=None,
 ):
     start_time = time.time()
     # Phase 0: precompute

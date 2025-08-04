@@ -160,7 +160,7 @@ def find_threshold(scores: torch.Tensor, threshold: float):
     cumulative_score = torch.cumsum(sorted_scores, dim=0) / torch.sum(sorted_scores)
     threshold_index = torch.searchsorted(cumulative_score, threshold)
     # make sure we don't go out of bounds (only really happens at threshold=1.0)
-    threshold_index = min(threshold_index, len(cumulative_score) - 1)
+    threshold_index = min(threshold_index, len(cumulative_score) - 1)  # type: ignore
     return sorted_scores[threshold_index]
 
 

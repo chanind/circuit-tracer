@@ -64,7 +64,7 @@ class CircuitGraphHandler(http.server.SimpleHTTPRequestHandler):
                 rel_path = self.path[len("/graph_data/") :].split("?")[0]
 
             # Properly join paths to handle missing slashes
-            local_path = os.path.join(self.data_dir, rel_path)
+            local_path = os.path.join(self.data_dir, rel_path)  # type: ignore
 
             logger.info(
                 f"Rewritten path to {local_path}. "
@@ -85,7 +85,7 @@ class CircuitGraphHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_header("Content-Encoding", "gzip")
 
             self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", len(content))
+            self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             self.wfile.write(content)
             return
@@ -110,7 +110,7 @@ class CircuitGraphHandler(http.server.SimpleHTTPRequestHandler):
             data = json.loads(post_data.decode("utf-8"))
 
             # Generate filename with timestamp
-            save_path = os.path.join(self.data_dir, f"{slug}.json")
+            save_path = os.path.join(self.data_dir, f"{slug}.json")  # type: ignore
 
             # Read the existing file and update it
             with open(save_path, "r") as f:
@@ -204,7 +204,7 @@ def serve(data_dir, frontend_dir=None, port=8032):
     # Use provided directories or defaults
     frontend_dir = Path(frontend_dir).resolve() if frontend_dir else DEFAULT_FRONTEND_DIR
 
-    frontend_dir_path = Path(frontend_dir)
+    frontend_dir_path = Path(frontend_dir)  # type: ignore
     if not frontend_dir_path.exists() and frontend_dir_path.is_dir():
         raise ValueError(f"Got frontend dir {frontend_dir} but this is not a valid directory")
 

@@ -1,13 +1,12 @@
 from __future__ import annotations
 import logging
 
-from typing import Dict, Iterable, NamedTuple, Optional, Dict
+from typing import Iterable, NamedTuple, Optional, Dict
 from urllib.parse import parse_qs, urlparse
 
 from huggingface_hub import hf_hub_download, get_token, hf_api
 from huggingface_hub.constants import HF_HUB_ENABLE_HF_TRANSFER
 from huggingface_hub.utils.tqdm import tqdm as hf_tqdm
-from huggingface_hub.utils import RepositoryNotFoundError
 from tqdm.contrib.concurrent import thread_map
 
 logger = logging.getLogger(__name__)
@@ -53,6 +52,7 @@ def download_hf_uri(uri: str) -> str:
         force_download=False,
     )
 
+
 def download_hf_uris(uris: Iterable[str], max_workers: int = 8) -> Dict[str, str]:
     """Download multiple HuggingFace URIs concurrently with pre-flight auth checks.
 
@@ -77,7 +77,7 @@ def download_hf_uris(uris: Iterable[str], max_workers: int = 8) -> Dict[str, str
     token = get_token()
 
     for repo_id in unique_repos:
-        if hf_api.repo_info(repo_id=repo_id, token=token).gated != False:
+        if hf_api.repo_info(repo_id=repo_id, token=token).gated is not False:
             if token is None:
                 raise PermissionError("Cannot access a gated repo without a hf token.")
 

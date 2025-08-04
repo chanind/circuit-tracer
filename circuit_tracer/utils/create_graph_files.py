@@ -67,7 +67,7 @@ def create_nodes(graph: Graph, node_mask, tokenizer, cumulative_scores, scan):
                 vocab_idx=graph.logit_tokens[pos],
                 token=process_token(tokenizer.decode(graph.logit_tokens[pos])),
                 target_logit=pos == 0,
-                token_prob=graph.logit_probabilities[pos],
+                token_prob=graph.logit_probabilities[pos],  # type: ignore
                 num_layers=layers,
             )
 

@@ -1,6 +1,7 @@
 from functools import partial
 
 import numpy as np
+import pytest
 import torch
 import torch.nn as nn
 from torch import device
@@ -164,7 +165,7 @@ def verify_feature_edges(
     random_order = torch.randperm(active_features.size(0))
     chosen_nodes = random_order[:n_samples]
     for chosen_node in tqdm(chosen_nodes):
-        layer, pos, feature_idx = active_features[chosen_node]
+        layer, pos, feature_idx = active_features[chosen_node].tolist()
         old_activation = activation_cache[layer, pos, feature_idx]
         new_activation = old_activation * 2
         expected_effects = adjacency_matrix[:, chosen_node]
@@ -174,7 +175,7 @@ def verify_feature_edges(
 def load_dummy_gemma_model(cfg: HookedTransformerConfig):
     transcoders = {
         layer_idx: SingleLayerTranscoder(
-            cfg.d_model, cfg.d_model * 4, JumpReLU(0.0, 0.1), layer_idx
+            cfg.d_model, cfg.d_model * 4, JumpReLU(torch.tensor(0.0), 0.1), layer_idx
         )
         for layer_idx in range(cfg.n_layers)
     }
@@ -183,12 +184,13 @@ def load_dummy_gemma_model(cfg: HookedTransformerConfig):
             nn.init.uniform_(param, a=-1, b=1)
 
     model = ReplacementModel.from_config(cfg, transcoders)
+    assert model.tokenizer is not None
     model.tokenizer.bos_token_id = None
     for _, param in model.named_parameters():
         nn.init.uniform_(param, a=-1, b=1)
 
     for i in range(len(transcoders)):
-        nn.init.uniform_(model.transcoders[i].activation_function.threshold, a=0, b=1)
+        nn.init.uniform_(model.transcoders[i].activation_function.threshold, a=0, b=1)  # type: ignore
 
     return model
 
@@ -223,7 +225,7 @@ def verify_small_gemma_model(s: torch.Tensor):
         "attn_types": ["global", "local"],
         "init_mode": "gpt2",
         "normalization_type": "RMSPre",
-        "device": device(type="cuda"),
+        "device": device("cuda"),
         "n_devices": 1,
         "attention_dir": "causal",
         "attn_only": False,
@@ -317,7 +319,7 @@ def verify_large_gemma_model(s: torch.Tensor):
         ],
         "init_mode": "gpt2",
         "normalization_type": "RMSPre",
-        "device": device(type="cuda"),
+        "device": device("cuda"),
         "n_devices": 1,
         "attention_dir": "causal",
         "attn_only": False,
@@ -374,16 +376,19 @@ def verify_gemma_2_2b(s: str):
         verify_feature_edges(model, graph)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_small_gemma_model():
     s = torch.tensor([10, 3, 4, 3, 2, 5, 3, 8])
     verify_small_gemma_model(s)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_large_gemma_model():
     s = torch.tensor([0, 113, 24, 53, 27])
     verify_large_gemma_model(s)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_gemma_2_2b():
     s = "The National Digital Analytics Group (ND"
     verify_gemma_2_2b(s)

@@ -128,7 +128,7 @@ def load_gemma_scope_transcoder(
     d_transcoder = param_dict["W_enc"].shape[1]
 
     # dummy JumpReLU; will get loaded via load_state_dict
-    activation_function = JumpReLU(0.0, 0.1)
+    activation_function = JumpReLU(torch.tensor(0.0), 0.1)
     with torch.device("meta"):
         transcoder = SingleLayerTranscoder(d_model, d_transcoder, activation_function, layer)
     transcoder.load_state_dict(param_dict, assign=True)
@@ -169,8 +169,8 @@ TranscoderSettings = namedtuple(
 
 def load_transcoder_set(
     transcoder_config_file: str,
-    device: Optional[torch.device] = torch.device("cuda"),
-    dtype: Optional[torch.dtype] = torch.float32,
+    device: torch.device = torch.device("cuda"),
+    dtype: torch.dtype = torch.float32,
 ) -> TranscoderSettings:
     """Loads either a preset set of transformers, or a set specified by a file.
 
@@ -187,11 +187,11 @@ def load_transcoder_set(
     # try to match a preset, and grab its config
     if transcoder_config_file == "gemma":
         package_path = resources.files(circuit_tracer)
-        transcoder_config_file = package_path / "configs/gemmascope-l0-0.yaml"
+        transcoder_config_file = package_path / "configs/gemmascope-l0-0.yaml"  # type: ignore
         scan = "gemma-2-2b"
     elif transcoder_config_file == "llama":
         package_path = resources.files(circuit_tracer)
-        transcoder_config_file = package_path / "configs/llama-relu.yaml"
+        transcoder_config_file = package_path / "configs/llama-relu.yaml"  # type: ignore
         scan = "llama-3-131k-relu"
 
     with open(transcoder_config_file, "r") as file:
