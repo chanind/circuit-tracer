@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 from torch import device
 from transformer_lens import HookedTransformerConfig
@@ -6,6 +7,7 @@ from transformer_lens import HookedTransformerConfig
 from circuit_tracer.graph import Graph, compute_edge_influence, compute_node_influence
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_small_graph():
     value = 10
     edge_matrix = torch.zeros([12, 12])

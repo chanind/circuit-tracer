@@ -35,9 +35,9 @@ class jumprelu(torch.autograd.Function):
 
 
 class JumpReLU(torch.nn.Module):
-    def __init__(self, threshold: float, bandwidth: float) -> None:
+    def __init__(self, threshold: torch.Tensor, bandwidth: float) -> None:
         super().__init__()
-        self.threshold = nn.Parameter(torch.tensor(threshold))
+        self.threshold = nn.Parameter(threshold)
         self.bandwidth = bandwidth
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

@@ -1,6 +1,7 @@
 from functools import partial
 
 import numpy as np
+import pytest
 import torch
 import torch.nn as nn
 from torch import device
@@ -374,16 +375,19 @@ def verify_gemma_2_2b(s: str):
         verify_feature_edges(model, graph)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_small_gemma_model():
     s = torch.tensor([10, 3, 4, 3, 2, 5, 3, 8])
     verify_small_gemma_model(s)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_large_gemma_model():
     s = torch.tensor([0, 113, 24, 53, 27])
     verify_large_gemma_model(s)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_gemma_2_2b():
     s = "The National Digital Analytics Group (ND"
     verify_gemma_2_2b(s)
