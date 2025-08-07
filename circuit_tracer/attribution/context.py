@@ -5,12 +5,15 @@ Attribution context for managing hooks during attribution computation.
 import contextlib
 import weakref
 from functools import partial
-from typing import Callable, List, Tuple
+from typing import TYPE_CHECKING, Callable, List, Tuple
 
 import numpy as np
 import torch
 from einops import einsum
 from transformer_lens.hook_points import HookPoint
+
+if TYPE_CHECKING:
+    from circuit_tracer.replacement_model import ReplacementModel
 
 
 class AttributionContext:
@@ -40,7 +43,7 @@ class AttributionContext:
 
     def __init__(
         self,
-        activation_matrix: torch.sparse.Tensor,
+        activation_matrix: torch.Tensor,
         error_vectors: torch.Tensor,
         token_vectors: torch.Tensor,
         decoder_vecs: torch.Tensor,
@@ -119,8 +122,8 @@ class AttributionContext:
             self._compute_score_hook(
                 f"blocks.{layer}.{feature_output_hook}",
                 self.decoder_vecs[layer_mask],
-                write_index=self.encoder_to_decoder_map[layer_mask],
-                read_index=np.s_[:, nnz_positions[layer_mask]],
+                write_index=self.encoder_to_decoder_map[layer_mask],  # type: ignore
+                read_index=np.s_[:, nnz_positions[layer_mask]],  # type: ignore
             )
             for layer in range(n_layers)
             if (layer_mask := nnz_layers == layer).any()
@@ -155,8 +158,8 @@ class AttributionContext:
     def install_hooks(self, model: "ReplacementModel"):
         """Context manager instruments the hooks for the forward and backward passes."""
         with model.hooks(
-            fwd_hooks=self._caching_hooks(model.feature_input_hook),
-            bwd_hooks=self._make_attribution_hooks(model.feature_output_hook),
+            fwd_hooks=self._caching_hooks(model.feature_input_hook),  # type: ignore
+            bwd_hooks=self._make_attribution_hooks(model.feature_output_hook),  # type: ignore
         ):
             yield
 
@@ -182,6 +185,7 @@ class AttributionContext:
             torch.Tensor: ``(batch, row_size)`` matrix - one row per node.
         """
 
+        assert self._resid_activations[0] is not None, "Residual activations are not cached"
         batch_size = self._resid_activations[0].shape[0]
         self._batch_buffer = torch.zeros(
             self._row_size,
@@ -211,7 +215,9 @@ class AttributionContext:
                 pos_indices=positions[mask],
                 values=inject_values[mask],
             )
-            handles.append(self._resid_activations[int(layer)].register_hook(fn))
+            resid_activations = self._resid_activations[int(layer)]
+            assert resid_activations is not None, "Residual activations are not cached"
+            handles.append(resid_activations.register_hook(fn))
 
         try:
             last_layer = max(layers_in_batch)

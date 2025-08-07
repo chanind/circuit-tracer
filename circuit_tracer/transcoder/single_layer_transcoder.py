@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List, Optional, Union
+from typing import Iterator, Optional, Union
 
 import numpy as np
 import torch
@@ -205,12 +205,13 @@ class TranscoderSet(nn.Module):
         skip_connection: Whether transcoders include learned skip connections
     """
 
+
     def __init__(
         self,
-        transcoders: Dict[int, SingleLayerTranscoder],
+        transcoders: dict[int, SingleLayerTranscoder],
         feature_input_hook: str,
         feature_output_hook: str,
-        scan: Optional[Union[str, List[str]]] = None,
+        scan: Optional[Union[str, list[str]]] = None,
     ):
         super().__init__()
         # Validate that we have continuous layers from 0 to max
@@ -239,24 +240,27 @@ class TranscoderSet(nn.Module):
     def __len__(self):
         return self.n_layers
 
-    def __getitem__(self, idx):
-        return self.transcoders[idx]
+    def __getitem__(self, idx: int) -> SingleLayerTranscoder:
+        return self.transcoders[idx]  # type: ignore
+
+    def __iter__(self) -> Iterator[SingleLayerTranscoder]:
+        return iter(self.transcoders)  # type: ignore
 
     def encode(self, input_acts):
         return torch.stack(
-            [transcoder.encode(input_acts[i]) for i, transcoder in enumerate(self.transcoders)],
+            [transcoder.encode(input_acts[i]) for i, transcoder in enumerate(self.transcoders)], # type: ignore
             dim=0,
         )
 
     def decode(self, acts):
         return torch.stack(
-            [transcoder.decode(acts[i]) for i, transcoder in enumerate(self.transcoders)], dim=0
+            [transcoder.decode(acts[i]) for i, transcoder in enumerate(self.transcoders)], dim=0 # type: ignore
         )
 
     def compute_attribution_components(
         self,
         mlp_inputs: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """Extract active features and their encoder/decoder vectors for attribution.
 
         Args:
@@ -278,10 +282,10 @@ class TranscoderSet(nn.Module):
         sparse_acts_list = []
 
         for layer, transcoder in enumerate(self.transcoders):
-            sparse_acts, active_encoders = transcoder.encode_sparse(
+            sparse_acts, active_encoders = transcoder.encode_sparse( # type: ignore
                 mlp_inputs[layer], zero_first_pos=True
             )
-            reconstruction[layer], active_decoders = transcoder.decode_sparse(sparse_acts)
+            reconstruction[layer], active_decoders = transcoder.decode_sparse(sparse_acts)  # type: ignore
             encoder_vectors.append(active_encoders)
             decoder_vectors.append(active_decoders)
             sparse_acts_list.append(sparse_acts)
@@ -299,7 +303,7 @@ class TranscoderSet(nn.Module):
         }
 
     def encode_layer(self, x, layer_id):
-        return self.transcoders[layer_id].encode(x)
+        return self.transcoders[layer_id].encode(x)  # type: ignore
 
 
 def load_gemma_scope_transcoder(

@@ -26,9 +26,10 @@ def load_dummy_llama_model(cfg: HookedTransformerConfig, k: int):
         transcoders, feature_input_hook="mlp.hook_in", feature_output_hook="mlp.hook_out"
     )
     model = ReplacementModel.from_config(cfg, transcoder_set)
+    assert model.tokenizer is not None
 
     ids = model.tokenizer.all_special_ids
-    type(model.tokenizer).all_special_ids = property(lambda self: [0] + ids)
+    type(model.tokenizer).all_special_ids = property(lambda self: [0] + ids)  # type: ignore
     for _, param in model.named_parameters():
         nn.init.uniform_(param, a=-1, b=1)
 

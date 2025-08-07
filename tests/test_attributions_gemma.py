@@ -166,7 +166,7 @@ def verify_feature_edges(
     random_order = torch.randperm(active_features.size(0))
     chosen_nodes = random_order[:n_samples]
     for chosen_node in tqdm(chosen_nodes):
-        layer, pos, feature_idx = active_features[chosen_node]
+        layer, pos, feature_idx = active_features[chosen_node].tolist()
         old_activation = activation_cache[layer, pos, feature_idx]
         new_activation = old_activation * 2
         expected_effects = adjacency_matrix[:, chosen_node]
@@ -189,12 +189,15 @@ def load_dummy_gemma_model(cfg: HookedTransformerConfig):
     )
     model = ReplacementModel.from_config(cfg, transcoder_set)
 
-    type(model.tokenizer).all_special_ids = property(lambda self: [0])
+    type(model.tokenizer).all_special_ids = property(lambda self: [0])  # type: ignore
 
     for _, param in model.named_parameters():
         nn.init.uniform_(param, a=-1, b=1)
 
+
+    assert isinstance(model.transcoders, TranscoderSet)
     for transcoder in model.transcoders:
+        assert isinstance(transcoder.activation_function, JumpReLU)
         nn.init.uniform_(transcoder.activation_function.threshold, a=0, b=1)
 
     return model

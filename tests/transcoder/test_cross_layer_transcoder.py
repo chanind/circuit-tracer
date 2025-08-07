@@ -251,7 +251,7 @@ def test_cross_layer_decoder_structure(create_test_clt_files):
 
         # Count actual decoder entries
         source_positions = torch.where(source_mask)[0]
-        decoder_from_source = sum(encoder_mapping == pos for pos in source_positions).sum()
+        decoder_from_source = sum(encoder_mapping == pos for pos in source_positions).sum()  # type: ignore
 
         assert decoder_from_source == expected_decoder_count
 

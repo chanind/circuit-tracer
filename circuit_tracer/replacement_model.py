@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torch import nn
 from transformer_lens import HookedTransformer, HookedTransformerConfig
 from transformer_lens.hook_points import HookPoint
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from circuit_tracer.attribution.context import AttributionContext
 from circuit_tracer.transcoder import TranscoderSet
@@ -64,6 +65,7 @@ class ReplacementModel(HookedTransformer):
     feature_output_hook: str
     skip_transcoder: bool
     scan: Optional[Union[str, List[str]]]
+    tokenizer: PreTrainedTokenizerBase
 
     @classmethod
     def from_config(
@@ -118,7 +120,7 @@ class ReplacementModel(HookedTransformer):
         model_name: str,
         transcoder_set: str,
         device: Optional[torch.device] = None,
-        dtype: Optional[torch.dtype] = torch.float32,
+        dtype: torch.dtype = torch.float32,
         **kwargs,
     ) -> "ReplacementModel":
         """Create a ReplacementModel from model name and transcoder config
@@ -156,7 +158,7 @@ class ReplacementModel(HookedTransformer):
         self.scan = transcoder_set.scan
 
         for block in self.blocks:
-            block.mlp = ReplacementMLP(block.mlp)
+            block.mlp = ReplacementMLP(block.mlp)  # type: ignore
 
         self.unembed = ReplacementUnembed(self.unembed)
 
@@ -176,21 +178,21 @@ class ReplacementModel(HookedTransformer):
             return acts.detach()
 
         for block in self.blocks:
-            block.attn.hook_pattern.add_hook(stop_gradient, is_permanent=True)
-            block.ln1.hook_scale.add_hook(stop_gradient, is_permanent=True)
-            block.ln2.hook_scale.add_hook(stop_gradient, is_permanent=True)
+            block.attn.hook_pattern.add_hook(stop_gradient, is_permanent=True)  # type: ignore
+            block.ln1.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
+            block.ln2.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
             if hasattr(block, "ln1_post"):
-                block.ln1_post.hook_scale.add_hook(stop_gradient, is_permanent=True)
+                block.ln1_post.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
             if hasattr(block, "ln2_post"):
-                block.ln2_post.hook_scale.add_hook(stop_gradient, is_permanent=True)
-            self.ln_final.hook_scale.add_hook(stop_gradient, is_permanent=True)
+                block.ln2_post.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
+            self.ln_final.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
 
         for param in self.parameters():
             param.requires_grad = False
 
-        def enable_gradient(acts, hook):
-            acts.requires_grad = True
-            return acts
+        def enable_gradient(tensor, hook):
+            tensor.requires_grad = True
+            return tensor
 
         self.hook_embed.add_hook(enable_gradient, is_permanent=True)
 
@@ -241,16 +243,16 @@ class ReplacementModel(HookedTransformer):
         attn_masks = {}
 
         for block in self.blocks:
-            attn_masks[block.attn.attn_type] = block.attn.mask
+            attn_masks[block.attn.attn_type] = block.attn.mask  # type: ignore
             if hasattr(block.attn, "rotary_sin"):
-                attn_masks["rotary_sin"] = block.attn.rotary_sin
-                attn_masks["rotary_cos"] = block.attn.rotary_cos
+                attn_masks["rotary_sin"] = block.attn.rotary_sin  # type: ignore
+                attn_masks["rotary_cos"] = block.attn.rotary_cos  # type: ignore
 
         for block in self.blocks:
-            block.attn.mask = attn_masks[block.attn.attn_type]
+            block.attn.mask = attn_masks[block.attn.attn_type]  # type: ignore
             if hasattr(block.attn, "rotary_sin"):
-                block.attn.rotary_sin = attn_masks["rotary_sin"]
-                block.attn.rotary_cos = attn_masks["rotary_cos"]
+                block.attn.rotary_sin = attn_masks["rotary_sin"]  # type: ignore
+                block.attn.rotary_cos = attn_masks["rotary_cos"]  # type: ignore
 
     def _get_activation_caching_hooks(
         self,
@@ -263,6 +265,7 @@ class ReplacementModel(HookedTransformer):
         )
 
         def cache_activations(acts, hook, layer):
+            assert isinstance(self.transcoders, TranscoderSet), "Only TranscoderSet is supported for activation caching"
             transcoder_acts = (
                 self.transcoders[layer]
                 .encode(acts, apply_activation_function=apply_activation_function)
@@ -275,7 +278,7 @@ class ReplacementModel(HookedTransformer):
             if append:
                 activation_matrix[layer].append(transcoder_acts)
             else:
-                activation_matrix[layer] = transcoder_acts
+                activation_matrix[layer] = transcoder_acts  # type: ignore
 
         activation_hooks = [
             (
@@ -284,7 +287,7 @@ class ReplacementModel(HookedTransformer):
             )
             for layer in range(self.cfg.n_layers)
         ]
-        return activation_matrix, activation_hooks
+        return activation_matrix, activation_hooks  # type: ignore
 
     def get_activations(
         self,
@@ -308,7 +311,7 @@ class ReplacementModel(HookedTransformer):
             sparse=sparse,
             apply_activation_function=apply_activation_function,
         )
-        with torch.inference_mode(), self.hooks(activation_hooks):
+        with torch.inference_mode(), self.hooks(activation_hooks):  # type: ignore
             logits = self(inputs)
         activation_cache = torch.stack(activation_cache)
         if sparse:
@@ -494,6 +497,7 @@ class ReplacementModel(HookedTransformer):
             skip_diffs = {}
 
             def diff_hook(activations, hook, layer: int):
+                assert isinstance(self.transcoders, TranscoderSet), "Only TranscoderSet is supported for direct effects"
                 # The MLP hook out freeze hook sets the value of the MLP to the value it
                 # had when run on the inputs normally. We subtract out the skip that
                 # corresponds to such a run, and add in the skip with direct effects.
@@ -568,6 +572,7 @@ class ReplacementModel(HookedTransformer):
             if transcoder_activations.is_sparse:
                 transcoder_activations = transcoder_activations.to_dense()
 
+            assert isinstance(self.transcoders, TranscoderSet), "Only TranscoderSet is supported for direct effects"
             if not apply_activation_function:
                 transcoder_activations = (
                     self.transcoders[layer]
@@ -659,7 +664,7 @@ class ReplacementModel(HookedTransformer):
             sparse=sparse,
         )
 
-        with self.hooks(hooks):
+        with self.hooks(hooks):  # type: ignore
             logits = self(inputs)
 
         activation_cache = torch.stack(activation_cache)
@@ -752,7 +757,7 @@ class ReplacementModel(HookedTransformer):
             )
 
             # at the end of the model, clear original hooks and add open-ended hooks
-            def clear_and_add_hooks(activations, hook):
+            def clear_and_add_hooks(tensor, hook):
                 self.reset_hooks()
                 for open_ended_name, open_ended_hook in open_ended_hooks:
                     self.add_hook(open_ended_name, open_ended_hook)
@@ -765,26 +770,26 @@ class ReplacementModel(HookedTransformer):
             generation = self.generate(inputs, **kwargs)
             self.reset_hooks()
 
-            logits = torch.cat((logit_cache[0], *open_ended_logits), dim=1)
+            logits = torch.cat((logit_cache[0], *open_ended_logits), dim=1)  # type: ignore
             open_ended_activations = torch.stack(
-                [torch.cat(acts, dim=0) for acts in open_ended_activations]
+                [torch.cat(acts, dim=0) for acts in open_ended_activations]  # type: ignore
             )
             activation_cache = torch.stack(activation_cache)
             activations = torch.cat((activation_cache, open_ended_activations), dim=1)
             if sparse:
                 activations = activations.coalesce()
 
-            return generation, logits, activations
+            return generation, logits, activations  # type: ignore
         else:
             # we can do more or less normal generation
-            with self.hooks(hooks):
+            with self.hooks(hooks):  # type: ignore
                 generation = self.generate(inputs, **kwargs)
 
             activation_cache = torch.stack(activation_cache)
             if sparse:
                 activation_cache = activation_cache.coalesce()
 
-            return generation, logit_cache[0], activation_cache
+            return generation, logit_cache[0], activation_cache  # type: ignore
 
     def __del__(self):
         # Prevent memory leaks

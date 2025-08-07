@@ -1,9 +1,9 @@
 import numpy as np
 import torch
-from torch import device
 from transformer_lens import HookedTransformerConfig
 
 from circuit_tracer.graph import Graph, compute_edge_influence, compute_node_influence
+from tests.helpers import DEVICE
 
 
 def test_small_graph():
@@ -67,7 +67,7 @@ def test_small_graph():
         "attn_types": ["global", "local"],
         "init_mode": "gpt2",
         "normalization_type": "RMSPre",
-        "device": device("cuda" if torch.cuda.is_available() else "cpu"),
+        "device": DEVICE,
         "n_devices": 1,
         "attention_dir": "causal",
         "attn_only": False,

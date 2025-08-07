@@ -37,7 +37,7 @@ class HfUri(NamedTuple):
 def load_transcoder_from_hub(
     hf_ref: str,
     device: Optional[torch.device] = None,
-    dtype: Optional[torch.dtype] = torch.float32,
+    dtype: torch.dtype = torch.float32,
     lazy_encoder: bool = False,
     lazy_decoder: bool = True,
 ):
@@ -49,22 +49,22 @@ def load_transcoder_from_hub(
     elif hf_ref == "llama":
         hf_ref = "mntss/transcoder-Llama-3.2-1B"
 
-    hf_ref = HfUri.from_str(hf_ref)
+    hf_uri = HfUri.from_str(hf_ref)
     try:
         config_path = hf_hub_download(
-            repo_id=hf_ref.repo_id,
-            revision=hf_ref.revision,
+            repo_id=hf_uri.repo_id,
+            revision=hf_uri.revision,
             filename="config.yaml",
         )
     except Exception as e:
-        raise FileNotFoundError(f"Could not download config.yaml from {hf_ref.repo_id}") from e
+        raise FileNotFoundError(f"Could not download config.yaml from {hf_uri.repo_id}") from e
 
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
-    config["repo_id"] = hf_ref.repo_id
-    config["revision"] = hf_ref.revision
-    config["scan"] = f"{hf_ref.repo_id}@{hf_ref.revision}" if hf_ref.revision else hf_ref.repo_id
+    config["repo_id"] = hf_uri.repo_id
+    config["revision"] = hf_uri.revision
+    config["scan"] = f"{hf_uri.repo_id}@{hf_uri.revision}" if hf_uri.revision else hf_uri.repo_id
 
     return load_transcoders(config, device, dtype, lazy_encoder, lazy_decoder), config
 
@@ -72,7 +72,7 @@ def load_transcoder_from_hub(
 def load_transcoders(
     config: dict,
     device: Optional[torch.device] = None,
-    dtype: Optional[torch.dtype] = torch.float32,
+    dtype: torch.dtype = torch.float32,
     lazy_encoder: bool = False,
     lazy_decoder: bool = True,
 ):
@@ -164,6 +164,7 @@ def parse_hf_uri(uri: str) -> HfUri:
 def download_hf_uri(uri: str) -> str:
     """Download a file referenced by a HuggingFace URI and return the local path."""
     parsed = parse_hf_uri(uri)
+    assert parsed.file_path is not None, "File path is not set"
     return hf_hub_download(
         repo_id=parsed.repo_id,
         filename=parsed.file_path,
@@ -204,6 +205,7 @@ def download_hf_uris(uris: Iterable[str], max_workers: int = 8) -> Dict[str, str
 
     def _download(uri: str) -> str:
         info = parsed_map[uri]
+        assert info.file_path is not None, "File path is not set"
 
         return hf_hub_download(
             repo_id=info.repo_id,

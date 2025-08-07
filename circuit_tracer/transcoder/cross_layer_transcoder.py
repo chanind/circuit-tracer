@@ -122,6 +122,7 @@ class CrossLayerTranscoder(torch.nn.Module):
         if not self.lazy_encoder:
             return self.W_enc if layer_id is None else self.W_enc[layer_id]
 
+        assert self.clt_path is not None, "CLT path is not set"
         if layer_id is not None:
             # Load single layer encoder
             enc_file = os.path.join(self.clt_path, f"W_enc_{layer_id}.safetensors")
@@ -199,14 +200,16 @@ class CrossLayerTranscoder(torch.nn.Module):
         to_read = feat_ids if feat_ids is not None else np.s_[:]
 
         if not self.lazy_decoder:
+            assert self.W_dec is not None, "Decoder weights are not set"
             return self.W_dec[layer_id][to_read].to(self.dtype)
 
+        assert self.clt_path is not None, "CLT path is not set"
         path = os.path.join(self.clt_path, f"W_dec_{layer_id}.safetensors")
         with safe_open(path, framework="pt", device=self.device.type) as f:
             return f.get_slice(f"W_dec_{layer_id}")[to_read].to(self.dtype)
 
     def select_decoder_vectors(self, features):
-        if not isinstance(features, torch.sparse.Tensor):
+        if not isinstance(features, torch.Tensor):
             features = features.to_sparse()
         layer_idx, pos_idx, feat_idx = features.indices()
         activations = features.values()

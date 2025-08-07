@@ -158,7 +158,7 @@ def find_threshold(scores: torch.Tensor, threshold: float):
     # Find score threshold that keeps the desired fraction of total influence
     sorted_scores = torch.sort(scores, descending=True).values
     cumulative_score = torch.cumsum(sorted_scores, dim=0) / torch.sum(sorted_scores)
-    threshold_index = torch.searchsorted(cumulative_score, threshold)
+    threshold_index: int = int(torch.searchsorted(cumulative_score, threshold).item())
     # make sure we don't go out of bounds (only really happens at threshold=1.0)
     threshold_index = min(threshold_index, len(cumulative_score) - 1)
     return sorted_scores[threshold_index]

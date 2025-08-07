@@ -151,7 +151,8 @@ def attribute(
         for reload_handle in offload_handles:
             reload_handle()
 
-        logger.removeHandler(handler)
+        if handler:
+            logger.removeHandler(handler)
 
 
 def _run_attribution(
@@ -164,8 +165,8 @@ def _run_attribution(
     offload,
     verbose,
     offload_handles,
+    logger,
     update_interval=4,
-    logger=None,
 ):
     start_time = time.time()
     # Phase 0: precompute

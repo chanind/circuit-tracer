@@ -41,7 +41,7 @@ class JumpReLU(torch.nn.Module):
         self.bandwidth = bandwidth
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return jumprelu.apply(x, self.threshold, self.bandwidth)
+        return jumprelu.apply(x, self.threshold, self.bandwidth)  # type: ignore
 
     def extra_repr(self) -> str:
         return f"threshold={self.threshold}, bandwidth={self.bandwidth}"

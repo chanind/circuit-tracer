@@ -28,7 +28,7 @@ def create_clt_model(cfg: HookedTransformerConfig):
     model = ReplacementModel.from_config(cfg, clt)
 
     # Monkey patch all_special_ids if necessary
-    type(model.tokenizer).all_special_ids = property(lambda self: [0])
+    type(model.tokenizer).all_special_ids = property(lambda self: [0])  # type: ignore
 
     # Initialize model weights
     with torch.no_grad():

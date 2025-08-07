@@ -33,4 +33,4 @@ exclude = ["*.ipynb"]
 
 [tool.pyright]
 typeCheckingMode = "basic"
-exclude = ["demos/"]
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "demos"]
