@@ -194,7 +194,6 @@ def load_dummy_gemma_model(cfg: HookedTransformerConfig):
     for _, param in model.named_parameters():
         nn.init.uniform_(param, a=-1, b=1)
 
-
     assert isinstance(model.transcoders, TranscoderSet)
     for transcoder in model.transcoders:
         assert isinstance(transcoder.activation_function, JumpReLU)

@@ -29,7 +29,7 @@ build-backend = "hatchling.build"
 
 [tool.ruff]
 line-length = 100
-exclude = ["*.ipynb"]
+exclude = ["*.ipynb", "demos"]
 
 [tool.pyright]
 typeCheckingMode = "basic"

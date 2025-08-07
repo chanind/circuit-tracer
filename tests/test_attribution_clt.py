@@ -50,8 +50,8 @@ def verify_feature_intervention(model, graph, feature_idx):
     decoder_vectors = model.transcoders.W_dec[layer][feat_id]
 
     def apply_steering(activations, hook):
-        l = hook.layer() - layer
-        activations[0, pos] += decoder_vectors[l] * activation
+        steer_layer = hook.layer() - layer
+        activations[0, pos] += decoder_vectors[steer_layer] * activation
         return activations
 
     # Setup hooks
@@ -60,8 +60,8 @@ def verify_feature_intervention(model, graph, feature_idx):
     )
     freeze_hooks = model.setup_intervention_with_freeze(prompt, direct_effects=True)
     steering_hooks = [
-        (f"blocks.{l}.{model.feature_output_hook}", apply_steering)
-        for l in range(layer, model.cfg.n_layers)
+        (f"blocks.{lyr}.{model.feature_output_hook}", apply_steering)
+        for lyr in range(layer, model.cfg.n_layers)
     ]
 
     # Run intervention

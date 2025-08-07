@@ -205,7 +205,6 @@ class TranscoderSet(nn.Module):
         skip_connection: Whether transcoders include learned skip connections
     """
 
-
     def __init__(
         self,
         transcoders: dict[int, SingleLayerTranscoder],
@@ -248,13 +247,14 @@ class TranscoderSet(nn.Module):
 
     def encode(self, input_acts):
         return torch.stack(
-            [transcoder.encode(input_acts[i]) for i, transcoder in enumerate(self.transcoders)], # type: ignore
+            [transcoder.encode(input_acts[i]) for i, transcoder in enumerate(self.transcoders)],  # type: ignore
             dim=0,
         )
 
     def decode(self, acts):
         return torch.stack(
-            [transcoder.decode(acts[i]) for i, transcoder in enumerate(self.transcoders)], dim=0 # type: ignore
+            [transcoder.decode(acts[i]) for i, transcoder in enumerate(self.transcoders)],
+            dim=0,  # type: ignore
         )
 
     def compute_attribution_components(
@@ -282,7 +282,7 @@ class TranscoderSet(nn.Module):
         sparse_acts_list = []
 
         for layer, transcoder in enumerate(self.transcoders):
-            sparse_acts, active_encoders = transcoder.encode_sparse( # type: ignore
+            sparse_acts, active_encoders = transcoder.encode_sparse(  # type: ignore
                 mlp_inputs[layer], zero_first_pos=True
             )
             reconstruction[layer], active_decoders = transcoder.decode_sparse(sparse_acts)  # type: ignore

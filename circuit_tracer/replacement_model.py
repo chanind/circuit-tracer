@@ -265,7 +265,9 @@ class ReplacementModel(HookedTransformer):
         )
 
         def cache_activations(acts, hook, layer):
-            assert isinstance(self.transcoders, TranscoderSet), "Only TranscoderSet is supported for activation caching"
+            assert isinstance(self.transcoders, TranscoderSet), (
+                "Only TranscoderSet is supported for activation caching"
+            )
             transcoder_acts = (
                 self.transcoders[layer]
                 .encode(acts, apply_activation_function=apply_activation_function)
@@ -497,7 +499,9 @@ class ReplacementModel(HookedTransformer):
             skip_diffs = {}
 
             def diff_hook(activations, hook, layer: int):
-                assert isinstance(self.transcoders, TranscoderSet), "Only TranscoderSet is supported for direct effects"
+                assert isinstance(self.transcoders, TranscoderSet), (
+                    "Only TranscoderSet is supported for direct effects"
+                )
                 # The MLP hook out freeze hook sets the value of the MLP to the value it
                 # had when run on the inputs normally. We subtract out the skip that
                 # corresponds to such a run, and add in the skip with direct effects.
@@ -572,7 +576,9 @@ class ReplacementModel(HookedTransformer):
             if transcoder_activations.is_sparse:
                 transcoder_activations = transcoder_activations.to_dense()
 
-            assert isinstance(self.transcoders, TranscoderSet), "Only TranscoderSet is supported for direct effects"
+            assert isinstance(self.transcoders, TranscoderSet), (
+                "Only TranscoderSet is supported for direct effects"
+            )
             if not apply_activation_function:
                 transcoder_activations = (
                     self.transcoders[layer]

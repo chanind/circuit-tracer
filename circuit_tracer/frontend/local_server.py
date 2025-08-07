@@ -204,7 +204,7 @@ def serve(data_dir, frontend_dir=None, port=8032):
     # Use provided directories or defaults
     frontend_dir = Path(frontend_dir).resolve() if frontend_dir else DEFAULT_FRONTEND_DIR
 
-    frontend_dir_path = Path(frontend_dir) # type: ignore
+    frontend_dir_path = Path(frontend_dir)  # type: ignore
     if not frontend_dir_path.exists() and frontend_dir_path.is_dir():
         raise ValueError(f"Got frontend dir {frontend_dir} but this is not a valid directory")
 
