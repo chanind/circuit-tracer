@@ -1,18 +1,14 @@
-import os
-import sys
-
 import numpy as np
+import pytest
 import torch
 import torch.nn as nn
-from torch import device
 from transformer_lens import HookedTransformerConfig
 
-from circuit_tracer import attribute, ReplacementModel
+from circuit_tracer import ReplacementModel, attribute
 from circuit_tracer.transcoder import SingleLayerTranscoder, TranscoderSet
 from circuit_tracer.transcoder.activation_functions import TopK
-
-sys.path.append(os.path.dirname(__file__))
-from test_attributions_gemma import verify_feature_edges, verify_token_and_error_edges
+from tests.helpers import DEVICE
+from tests.test_attributions_gemma import verify_feature_edges, verify_token_and_error_edges
 
 
 def load_dummy_llama_model(cfg: HookedTransformerConfig, k: int):
@@ -26,7 +22,9 @@ def load_dummy_llama_model(cfg: HookedTransformerConfig, k: int):
         for _, param in transcoder.named_parameters():
             nn.init.uniform_(param, a=-1, b=1)
 
-    transcoder_set = TranscoderSet(transcoders, feature_input_hook="mlp.hook_in", feature_output_hook="mlp.hook_out")
+    transcoder_set = TranscoderSet(
+        transcoders, feature_input_hook="mlp.hook_in", feature_output_hook="mlp.hook_out"
+    )
     model = ReplacementModel.from_config(cfg, transcoder_set)
 
     ids = model.tokenizer.all_special_ids
@@ -67,7 +65,7 @@ def verify_small_llama_model(s: torch.Tensor):
         "attn_types": None,
         "init_mode": "gpt2",
         "normalization_type": "RMSPre",
-        "device": device(type="cuda"),
+        "device": DEVICE,
         "n_devices": 1,
         "attention_dir": "causal",
         "attn_only": False,
@@ -146,7 +144,7 @@ def verify_large_llama_model(s: torch.Tensor):
         "attn_types": None,
         "init_mode": "gpt2",
         "normalization_type": "RMSPre",
-        "device": device(type="cuda"),
+        "device": DEVICE,
         "n_devices": 1,
         "attention_dir": "causal",
         "attn_only": False,
@@ -212,13 +210,7 @@ def test_large_llama_model():
     verify_large_llama_model(s)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_llama_3_2_1b():
     s = "The National Digital Analytics Group (ND"
     verify_llama_3_2_1b(s)
-
-
-if __name__ == "__main__":
-    torch.manual_seed(42)
-    test_small_llama_model()
-    test_large_llama_model()
-    test_llama_3_2_1b()

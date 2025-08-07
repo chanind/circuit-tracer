@@ -243,10 +243,15 @@ class TranscoderSet(nn.Module):
         return self.transcoders[idx]
 
     def encode(self, input_acts):
-        return torch.stack([transcoder.encode(input_acts[i]) for i, transcoder in enumerate(self.transcoders)], dim=0)
+        return torch.stack(
+            [transcoder.encode(input_acts[i]) for i, transcoder in enumerate(self.transcoders)],
+            dim=0,
+        )
 
     def decode(self, acts):
-        return torch.stack([transcoder.decode(acts[i]) for i, transcoder in enumerate(self.transcoders)], dim=0)
+        return torch.stack(
+            [transcoder.decode(acts[i]) for i, transcoder in enumerate(self.transcoders)], dim=0
+        )
 
     def compute_attribution_components(
         self,
@@ -331,7 +336,7 @@ def load_gemma_scope_transcoder(
     d_transcoder, d_model = param_dict["W_enc"].shape
 
     # dummy JumpReLU; will get loaded via load_state_dict
-    activation_function = JumpReLU(0.0, 0.1)
+    activation_function = JumpReLU(torch.tensor(0.0), 0.1)
     with torch.device("meta"):
         transcoder = SingleLayerTranscoder(d_model, d_transcoder, activation_function, layer)
     transcoder.load_state_dict(param_dict, assign=True)
