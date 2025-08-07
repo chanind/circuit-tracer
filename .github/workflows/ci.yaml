@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,6 +21,6 @@ jobs:
       - name: check linting
         run: python -m ruff check
       - name: check types
-        run: python -m  pyright
+        run: python -m pyright
       - name: run tests
-        run: python -m  pytest tests
+        run: python -m pytest tests
