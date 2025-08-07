@@ -5,7 +5,8 @@ Attribution context for managing hooks during attribution computation.
 import contextlib
 import weakref
 from functools import partial
-from typing import TYPE_CHECKING, Callable, List, Tuple
+from typing import TYPE_CHECKING
+from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -55,7 +56,7 @@ class AttributionContext:
         n_layers, n_pos, _ = activation_matrix.shape
 
         # Forward-pass cache
-        self._resid_activations: List[torch.Tensor | None] = [None] * (n_layers + 1)
+        self._resid_activations: list[torch.Tensor | None] = [None] * (n_layers + 1)
         self._batch_buffer: torch.Tensor | None = None
         self.n_layers: int = n_layers
 
@@ -72,7 +73,7 @@ class AttributionContext:
         total_active_feats = activation_matrix._nnz()
         self._row_size: int = total_active_feats + (n_layers + 1) * n_pos  # + logits later
 
-    def _caching_hooks(self, feature_input_hook: str) -> List[Tuple[str, Callable]]:
+    def _caching_hooks(self, feature_input_hook: str) -> list[tuple[str, Callable]]:
         """Return hooks that store residual activations layer-by-layer."""
 
         proxy = weakref.proxy(self)
@@ -94,7 +95,7 @@ class AttributionContext:
         output_vecs: torch.Tensor,
         write_index: slice,
         read_index: slice | np.ndarray = np.s_[:],
-    ) -> Tuple[str, Callable]:
+    ) -> tuple[str, Callable]:
         """
         Factory that contracts *gradients* with an **output vector set**.
         The hook computes A_{s->t} and writes the result into an in-place buffer row.
@@ -111,7 +112,7 @@ class AttributionContext:
 
         return hook_name, _hook_fn
 
-    def _make_attribution_hooks(self, feature_output_hook: str) -> List[Tuple[str, Callable]]:
+    def _make_attribution_hooks(self, feature_output_hook: str) -> list[tuple[str, Callable]]:
         """Create the complete backward-hook for computing attribution scores."""
 
         n_layers, n_pos, _ = self.activation_matrix.shape

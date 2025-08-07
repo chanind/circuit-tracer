@@ -1,6 +1,6 @@
 import glob
 import os
-from typing import List, Optional, Union
+
 
 import numpy as np
 import torch
@@ -13,7 +13,8 @@ from circuit_tracer.utils import get_default_device
 
 class CrossLayerTranscoder(torch.nn.Module):
     """
-    A cross-layer transcoder (CLT) where features read from one layer and write to all subsequent layers.
+    A cross-layer transcoder (CLT) where features read from one layer and write to all
+    subsequent layers.
 
     Cross-layer transcoders are the core architecture enabling the circuit tracing methodology.
     Unlike per-layer transcoders, CLT features can "bridge over" multiple MLP layers, allowing
@@ -54,10 +55,10 @@ class CrossLayerTranscoder(torch.nn.Module):
         lazy_encoder=False,
         feature_input_hook: str = "hook_resid_mid",
         feature_output_hook: str = "hook_mlp_out",
-        scan: Optional[Union[str, List[str]]] = None,
-        device: Optional[torch.device] = None,
+        scan: str | list[str] | None = None,
+        device: torch.device | None = None,
         dtype: torch.dtype = torch.bfloat16,
-        clt_path: Optional[str] = None,
+        clt_path: str | None = None,
     ):
         super().__init__()
 
@@ -310,8 +311,8 @@ def load_clt(
     clt_path: str,
     feature_input_hook: str = "hook_resid_mid",
     feature_output_hook: str = "hook_mlp_out",
-    scan: Optional[Union[str, List[str]]] = None,
-    device: Optional[torch.device] = None,
+    scan: str | list[str] | None = None,
+    device: torch.device | None = None,
     dtype: torch.dtype = torch.bfloat16,
     lazy_decoder: bool = True,
     lazy_encoder: bool = False,

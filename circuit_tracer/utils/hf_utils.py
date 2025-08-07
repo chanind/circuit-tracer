@@ -3,7 +3,8 @@ from __future__ import annotations
 import glob
 import logging
 import os
-from typing import Dict, Iterable, NamedTuple, Optional
+from typing import NamedTuple
+from collections.abc import Iterable
 from urllib.parse import parse_qs, urlparse
 
 import torch
@@ -20,8 +21,8 @@ class HfUri(NamedTuple):
     """Structured representation of a HuggingFace URI."""
 
     repo_id: str
-    file_path: Optional[str]
-    revision: Optional[str]
+    file_path: str | None
+    revision: str | None
 
     @classmethod
     def from_str(cls, hf_ref: str):
@@ -36,7 +37,7 @@ class HfUri(NamedTuple):
 
 def load_transcoder_from_hub(
     hf_ref: str,
-    device: Optional[torch.device] = None,
+    device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
     lazy_encoder: bool = False,
     lazy_decoder: bool = True,
@@ -59,7 +60,7 @@ def load_transcoder_from_hub(
     except Exception as e:
         raise FileNotFoundError(f"Could not download config.yaml from {hf_uri.repo_id}") from e
 
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
 
     config["repo_id"] = hf_uri.repo_id
@@ -71,7 +72,7 @@ def load_transcoder_from_hub(
 
 def load_transcoders(
     config: dict,
-    device: Optional[torch.device] = None,
+    device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
     lazy_encoder: bool = False,
     lazy_decoder: bool = True,
@@ -173,7 +174,7 @@ def download_hf_uri(uri: str) -> str:
     )
 
 
-def download_hf_uris(uris: Iterable[str], max_workers: int = 8) -> Dict[str, str]:
+def download_hf_uris(uris: Iterable[str], max_workers: int = 8) -> dict[str, str]:
     """Download multiple HuggingFace URIs concurrently with pre-flight auth checks.
 
     Args:

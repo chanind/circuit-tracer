@@ -113,7 +113,7 @@ class CircuitGraphHandler(http.server.SimpleHTTPRequestHandler):
             save_path = os.path.join(self.data_dir, f"{slug}.json")
 
             # Read the existing file and update it
-            with open(save_path, "r") as f:
+            with open(save_path) as f:
                 graph = json.load(f)
                 graph["qParams"] = data["qParams"]
 

@@ -1,4 +1,4 @@
-from typing import Any, Tuple
+from typing import Any
 
 import torch
 from torch import nn
@@ -15,7 +15,7 @@ class jumprelu(torch.autograd.Function):
 
     @staticmethod
     def setup_context(
-        ctx: Any, inputs: Tuple[torch.Tensor, torch.Tensor, float], output: torch.Tensor
+        ctx: Any, inputs: tuple[torch.Tensor, torch.Tensor, float], output: torch.Tensor
     ) -> None:
         x, threshold, bandwidth = inputs
         del output
@@ -23,7 +23,7 @@ class jumprelu(torch.autograd.Function):
         ctx.bandwidth = bandwidth
 
     @staticmethod
-    def backward(ctx: Any, grad_output: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, None]:
+    def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, None]:
         x, threshold = ctx.saved_tensors
         bandwidth = ctx.bandwidth
         x_grad = (x > threshold) * grad_output  # We don't apply STE to x input

@@ -1,5 +1,5 @@
 import os
-from typing import Iterator, Optional, Union
+from collections.abc import Iterator
 
 import numpy as np
 import torch
@@ -40,10 +40,10 @@ class SingleLayerTranscoder(nn.Module):
         activation_function,
         layer_idx: int,
         skip_connection: bool = False,
-        transcoder_path: Optional[str] = None,
+        transcoder_path: str | None = None,
         lazy_encoder: bool = False,
         lazy_decoder: bool = False,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
         dtype: torch.dtype = torch.bfloat16,
     ):
         super().__init__()
@@ -210,7 +210,7 @@ class TranscoderSet(nn.Module):
         transcoders: dict[int, SingleLayerTranscoder],
         feature_input_hook: str,
         feature_output_hook: str,
-        scan: Optional[Union[str, list[str]]] = None,
+        scan: str | list[str] | None = None,
     ):
         super().__init__()
         # Validate that we have continuous layers from 0 to max
@@ -253,8 +253,8 @@ class TranscoderSet(nn.Module):
 
     def decode(self, acts):
         return torch.stack(
-            [transcoder.decode(acts[i]) for i, transcoder in enumerate(self.transcoders)],
-            dim=0,  # type: ignore
+            [transcoder.decode(acts[i]) for i, transcoder in enumerate(self.transcoders)],  # type: ignore
+            dim=0,
         )
 
     def compute_attribution_components(
@@ -309,9 +309,9 @@ class TranscoderSet(nn.Module):
 def load_gemma_scope_transcoder(
     path: str,
     layer: int,
-    device: Optional[torch.device] = None,
-    dtype: Optional[torch.dtype] = torch.float32,
-    revision: Optional[str] = None,
+    device: torch.device | None = None,
+    dtype: torch.dtype = torch.float32,
+    revision: str | None = None,
     **kwargs,
 ) -> SingleLayerTranscoder:
     if device is None:
@@ -350,8 +350,8 @@ def load_gemma_scope_transcoder(
 def load_relu_transcoder(
     path: str,
     layer: int,
-    device: Optional[torch.device] = None,
-    dtype: Optional[torch.dtype] = torch.float32,
+    device: torch.device | None = None,
+    dtype: torch.dtype = torch.float32,
     lazy_encoder: bool = True,
     lazy_decoder: bool = True,
 ):
@@ -392,8 +392,8 @@ def load_transcoder_set(
     scan: str,
     feature_input_hook: str,
     feature_output_hook: str,
-    device: Optional[torch.device] = None,
-    dtype: Optional[torch.dtype] = torch.float32,
+    device: torch.device | None = None,
+    dtype: torch.dtype = torch.float32,
     gemma_scope: bool = False,
     lazy_encoder: bool = True,
     lazy_decoder: bool = True,
@@ -407,8 +407,8 @@ def load_transcoder_set(
         scan: Scan identifier
         feature_input_hook: Hook point where features read from
         feature_output_hook: Hook point where features write to
-        device (Optional[torch.device], optional): Device to load to
-        dtype (Optional[torch.dtype], optional): Data type to use
+        device (torch.device | None, optional): Device to load to
+        dtype (torch.dtype | None, optional): Data type to use
         gemma_scope: Whether to use gemma scope loader
         lazy_encoder: Whether to use lazy loading for encoder weights
         lazy_decoder: Whether to use lazy loading for decoder weights

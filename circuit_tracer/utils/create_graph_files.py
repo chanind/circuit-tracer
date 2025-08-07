@@ -1,7 +1,7 @@
 import logging
 import os
 import time
-from typing import Union
+
 
 import torch
 from transformers import AutoTokenizer
@@ -145,7 +145,7 @@ def build_model(graph: Graph, used_nodes, used_edges, slug, scan, node_threshold
 
 
 def create_graph_files(
-    graph_or_path: Union[Graph, str],
+    graph_or_path: Graph | str,
     slug: str,
     output_path,
     scan=None,

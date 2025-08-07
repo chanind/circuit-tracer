@@ -1,4 +1,4 @@
-from typing import List, NamedTuple, Optional, Union
+from typing import NamedTuple
 
 import torch
 from transformer_lens import HookedTransformerConfig
@@ -14,7 +14,7 @@ class Graph:
     activation_values: torch.Tensor
     logit_probabilities: torch.Tensor
     cfg: HookedTransformerConfig
-    scan: Optional[Union[str, List[str]]]
+    scan: str | list[str] | None
 
     def __init__(
         self,
@@ -27,7 +27,7 @@ class Graph:
         logit_probabilities: torch.Tensor,
         selected_features: torch.Tensor,
         activation_values: torch.Tensor,
-        scan: Optional[Union[str, List[str]]] = None,
+        scan: str | list[str] | None = None,
     ):
         """
         A graph object containing the adjacency matrix describing the direct effect of each

@@ -31,6 +31,20 @@ build-backend = "hatchling.build"
 line-length = 100
 exclude = ["*.ipynb", "demos"]
 
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "TID", # flake8-tidy-imports (includes TID251 for banned-api)
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.Union".msg = "Use `|` instead"
+"typing.Optional".msg = "Use `| None` instead"
+"typing.Dict".msg = "Use `dict` instead"
+"typing.Tuple".msg = "Use `tuple` instead"
+"typing.List".msg = "Use `list` instead"
+
 [tool.pyright]
 typeCheckingMode = "basic"
 exclude = ["**/node_modules", "**/__pycache__", "**/.*", "demos"]
