@@ -3,7 +3,7 @@ import torch
 from transformer_lens import HookedTransformerConfig
 
 from circuit_tracer.graph import Graph, compute_edge_influence, compute_node_influence
-from tests.helpers import DEVICE
+from circuit_tracer.utils import get_default_device
 
 
 def test_small_graph():
@@ -67,7 +67,7 @@ def test_small_graph():
         "attn_types": ["global", "local"],
         "init_mode": "gpt2",
         "normalization_type": "RMSPre",
-        "device": DEVICE,
+        "device": get_default_device(),
         "n_devices": 1,
         "attention_dir": "causal",
         "attn_only": False,

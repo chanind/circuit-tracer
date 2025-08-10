@@ -10,7 +10,7 @@ from transformer_lens import HookedTransformerConfig
 from circuit_tracer import Graph, ReplacementModel, attribute
 from circuit_tracer.transcoder import SingleLayerTranscoder, TranscoderSet
 from circuit_tracer.transcoder.activation_functions import JumpReLU
-from tests.helpers import DEVICE
+from circuit_tracer.utils import get_default_device
 
 
 def verify_token_and_error_edges(
@@ -23,9 +23,9 @@ def verify_token_and_error_edges(
     logit_rtol=1e-3,
 ):
     s = graph.input_tokens
-    adjacency_matrix = graph.adjacency_matrix.to(DEVICE)
-    active_features = graph.active_features.to(DEVICE)
-    logit_tokens = graph.logit_tokens.to(DEVICE)
+    adjacency_matrix = graph.adjacency_matrix.to(get_default_device())
+    active_features = graph.active_features.to(get_default_device())
+    logit_tokens = graph.logit_tokens.to(get_default_device())
     total_active_features = active_features.size(0)
     pos_start = 1 if delete_bos else 0
 
@@ -116,9 +116,9 @@ def verify_feature_edges(
     logit_rtol=1e-3,
 ):
     s = graph.input_tokens
-    adjacency_matrix = graph.adjacency_matrix.to(DEVICE)
-    active_features = graph.active_features.to(DEVICE)
-    logit_tokens = graph.logit_tokens.to(DEVICE)
+    adjacency_matrix = graph.adjacency_matrix.to(get_default_device())
+    active_features = graph.active_features.to(get_default_device())
+    logit_tokens = graph.logit_tokens.to(get_default_device())
     total_active_features = active_features.size(0)
 
     logits, activation_cache = model.get_activations(s, apply_activation_function=False)
@@ -232,7 +232,7 @@ def verify_small_gemma_model(s: torch.Tensor):
         "attn_types": ["global", "local"],
         "init_mode": "gpt2",
         "normalization_type": "RMSPre",
-        "device": DEVICE,
+        "device": get_default_device(),
         "n_devices": 1,
         "attention_dir": "causal",
         "attn_only": False,
@@ -326,7 +326,7 @@ def verify_large_gemma_model(s: torch.Tensor):
         ],
         "init_mode": "gpt2",
         "normalization_type": "RMSPre",
-        "device": DEVICE,
+        "device": get_default_device(),
         "n_devices": 1,
         "attention_dir": "causal",
         "attn_only": False,

@@ -5,7 +5,7 @@ from transformer_lens import HookedTransformerConfig
 from circuit_tracer import attribute
 from circuit_tracer.replacement_model import ReplacementModel
 from circuit_tracer.transcoder.cross_layer_transcoder import CrossLayerTranscoder
-from tests.helpers import DEVICE, DEVICE_STR
+from circuit_tracer.utils import get_default_device
 
 
 def create_clt_model(cfg: HookedTransformerConfig):
@@ -79,7 +79,7 @@ def verify_feature_intervention(model, graph, feature_idx):
     # Calculate error
     delta = new_activations - graph.activation_values
     n_active = len(graph.active_features)
-    expected_delta = influences[:n_active].to(DEVICE)
+    expected_delta = influences[:n_active].to(get_default_device())
 
     max_error = (delta - expected_delta).abs().max().item()
     return max_error
@@ -99,7 +99,7 @@ def test_clt_attribution():
             "act_fn": "gelu",
             "d_vocab": 50,
             "model_name": "test-clt",
-            "device": DEVICE_STR,
+            "device": get_default_device(),
             "tokenizer_name": "gpt2",
         }
     )

@@ -7,7 +7,7 @@ from transformer_lens import HookedTransformerConfig
 from circuit_tracer import ReplacementModel, attribute
 from circuit_tracer.transcoder import SingleLayerTranscoder, TranscoderSet
 from circuit_tracer.transcoder.activation_functions import TopK
-from tests.helpers import DEVICE
+from circuit_tracer.utils import get_default_device
 from tests.test_attributions_gemma import verify_feature_edges, verify_token_and_error_edges
 
 
@@ -66,7 +66,7 @@ def verify_small_llama_model(s: torch.Tensor):
         "attn_types": None,
         "init_mode": "gpt2",
         "normalization_type": "RMSPre",
-        "device": DEVICE,
+        "device": get_default_device(),
         "n_devices": 1,
         "attention_dir": "causal",
         "attn_only": False,
@@ -145,7 +145,7 @@ def verify_large_llama_model(s: torch.Tensor):
         "attn_types": None,
         "init_mode": "gpt2",
         "normalization_type": "RMSPre",
-        "device": DEVICE,
+        "device": get_default_device(),
         "n_devices": 1,
         "attention_dir": "causal",
         "attn_only": False,
