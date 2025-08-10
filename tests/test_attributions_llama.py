@@ -61,7 +61,7 @@ def verify_small_llama_model(s: torch.Tensor):
         "checkpoint_index": None,
         "checkpoint_label_type": None,
         "checkpoint_value": None,
-        "tokenizer_name": "gpt2",  # intentionally using the wrong tokenizer to avoid needing to access gated repos
+        "tokenizer_name": "gpt2",  # using wrong tokenizer to avoid gated repos
         "window_size": None,
         "attn_types": None,
         "init_mode": "gpt2",
@@ -140,7 +140,7 @@ def verify_large_llama_model(s: torch.Tensor):
         "checkpoint_index": None,
         "checkpoint_label_type": None,
         "checkpoint_value": None,
-        "tokenizer_name": "gpt2",  # intentionally using the wrong tokenizer to avoid needing to access gated repos
+        "tokenizer_name": "gpt2",  # using wrong tokenizer to avoid gated repos
         "window_size": None,
         "attn_types": None,
         "init_mode": "gpt2",

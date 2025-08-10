@@ -227,7 +227,7 @@ def verify_small_gemma_model(s: torch.Tensor):
         "checkpoint_index": None,
         "checkpoint_label_type": None,
         "checkpoint_value": None,
-        "tokenizer_name": "gpt2",  # intentionally using the wrong tokenizer to avoid needing to access gated repos
+        "tokenizer_name": "gpt2",  # using wrong tokenizer to avoid gated repos
         "window_size": 4096,
         "attn_types": ["global", "local"],
         "init_mode": "gpt2",
@@ -304,7 +304,7 @@ def verify_large_gemma_model(s: torch.Tensor):
         "checkpoint_index": None,
         "checkpoint_label_type": None,
         "checkpoint_value": None,
-        "tokenizer_name": "gpt2",  # intentionally using the wrong tokenizer to avoid needing to access gated repos
+        "tokenizer_name": "gpt2",  # using wrong tokenizer to avoid gated repos
         "window_size": 4096,
         "attn_types": [
             "global",
