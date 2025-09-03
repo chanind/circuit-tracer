@@ -1,11 +1,10 @@
 from functools import partial
 
-import numpy as np
 import pytest
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from transformer_lens import HookedTransformerConfig
+from transformers import AutoTokenizer, Gemma2Config, Gemma2ForCausalLM
 
 from circuit_tracer import Graph, ReplacementModel, attribute
 from circuit_tracer.transcoder import SingleLayerTranscoder, TranscoderSet
@@ -174,12 +173,12 @@ def verify_feature_edges(
         verify_intervention(expected_effects, layer, pos, feature_idx, new_activation)
 
 
-def load_dummy_gemma_model(cfg: HookedTransformerConfig):
+def load_dummy_gemma_model(cfg: Gemma2Config):
     transcoders = {
         layer_idx: SingleLayerTranscoder(
-            cfg.d_model, cfg.d_model * 4, JumpReLU(torch.tensor(0.0), 0.1), layer_idx
+            cfg.hidden_size, cfg.hidden_size * 4, JumpReLU(torch.tensor(0.0), 0.1), layer_idx
         )
-        for layer_idx in range(cfg.n_layers)
+        for layer_idx in range(cfg.num_hidden_layers)
     }
     for transcoder in transcoders.values():
         for _, param in transcoder.named_parameters():
@@ -188,7 +187,10 @@ def load_dummy_gemma_model(cfg: HookedTransformerConfig):
     transcoder_set = TranscoderSet(
         transcoders, feature_input_hook="mlp.hook_in", feature_output_hook="mlp.hook_out"
     )
-    model = ReplacementModel.from_config(cfg, transcoder_set)
+
+    hf_model = Gemma2ForCausalLM(cfg)
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")  # to avoid gated repos
+    model = ReplacementModel.from_hf_model(hf_model, tokenizer, transcoder_set)
 
     type(model.tokenizer).all_special_ids = property(lambda self: [0])  # type: ignore
 
@@ -204,76 +206,32 @@ def load_dummy_gemma_model(cfg: HookedTransformerConfig):
 
 
 def verify_small_gemma_model(s: torch.Tensor):
-    gemma_small_cfg = {
-        "n_layers": 2,
-        "d_model": 8,
-        "n_ctx": 8192,
-        "d_head": 4,
-        "model_name": "gemma-2-2b",
-        "n_heads": 2,
-        "d_mlp": 16,
-        "act_fn": "gelu_pytorch_tanh",
-        "d_vocab": 16,
-        "eps": 1e-06,
-        "use_attn_result": False,
-        "use_attn_scale": True,
-        "attn_scale": np.float64(16.0),
-        "use_split_qkv_input": False,
-        "use_hook_mlp_in": False,
-        "use_attn_in": False,
-        "use_local_attn": True,
-        "ungroup_grouped_query_attention": False,
-        "original_architecture": "Gemma2ForCausalLM",
-        "from_checkpoint": False,
-        "checkpoint_index": None,
-        "checkpoint_label_type": None,
-        "checkpoint_value": None,
-        "tokenizer_name": "gpt2",  # using wrong tokenizer to avoid gated repos
-        "window_size": 4096,
-        "attn_types": ["global", "local"],
-        "init_mode": "gpt2",
-        "normalization_type": "RMSPre",
-        "device": get_default_device(),
-        "n_devices": 1,
-        "attention_dir": "causal",
-        "attn_only": False,
-        "seed": None,
-        "initializer_range": 0.02,
-        "init_weights": False,
-        "scale_attn_by_inverse_layer_idx": False,
-        "positional_embedding_type": "rotary",
-        "final_rms": True,
-        "d_vocab_out": 16,
-        "parallel_attn_mlp": False,
-        "rotary_dim": 4,
-        "n_params": 2146959360,
-        "use_hook_tokens": False,
-        "gated_mlp": True,
-        "default_prepend_bos": True,
-        "dtype": torch.float32,
-        "tokenizer_prepends_bos": True,
-        "n_key_value_heads": 2,
-        "post_embedding_ln": False,
-        "rotary_base": 10000.0,
-        "trust_remote_code": False,
-        "rotary_adjacent_pairs": False,
-        "load_in_4bit": False,
-        "num_experts": None,
-        "experts_per_token": None,
-        "relative_attention_max_distance": None,
-        "relative_attention_num_buckets": None,
-        "decoder_start_token_id": None,
-        "tie_word_embeddings": False,
-        "use_normalization_before_and_after": True,
-        "attn_scores_soft_cap": 50.0,
-        "output_logits_soft_cap": 0.0,
-        "use_NTK_by_parts_rope": False,
-        "NTK_by_parts_low_freq_factor": 1.0,
-        "NTK_by_parts_high_freq_factor": 4.0,
-        "NTK_by_parts_factor": 8.0,
-    }
-    cfg = HookedTransformerConfig.from_dict(gemma_small_cfg)
-    model = load_dummy_gemma_model(cfg)
+    # Create a small Gemma2 config for testing
+    gemma_small_cfg = Gemma2Config(
+        vocab_size=16,
+        hidden_size=8,
+        intermediate_size=16,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        head_dim=4,
+        hidden_act="gelu_pytorch_tanh",
+        max_position_embeddings=8192,
+        initializer_range=0.02,
+        rms_norm_eps=1e-6,
+        use_cache=True,
+        pad_token_id=0,
+        eos_token_id=1,
+        bos_token_id=2,
+        tie_word_embeddings=False,
+        rope_theta=10000.0,
+        attention_bias=False,
+        attention_dropout=0.0,
+        attn_logit_softcapping=50.0,
+        final_logit_softcapping=0.0,
+        sliding_window=4096,
+    )
+    model = load_dummy_gemma_model(gemma_small_cfg)
     graph = attribute(s, model)
 
     verify_token_and_error_edges(model, graph)
@@ -281,93 +239,32 @@ def verify_small_gemma_model(s: torch.Tensor):
 
 
 def verify_large_gemma_model(s: torch.Tensor):
-    gemma_large_cfg = {
-        "n_layers": 16,
-        "d_model": 64,
-        "n_ctx": 8192,
-        "d_head": 32,
-        "model_name": "gemma-2-2b",
-        "n_heads": 16,
-        "d_mlp": 128,
-        "act_fn": "gelu_pytorch_tanh",
-        "d_vocab": 128,
-        "eps": 1e-06,
-        "use_attn_result": False,
-        "use_attn_scale": True,
-        "attn_scale": np.float64(16.0),
-        "use_split_qkv_input": False,
-        "use_hook_mlp_in": False,
-        "use_attn_in": False,
-        "use_local_attn": True,
-        "ungroup_grouped_query_attention": False,
-        "original_architecture": "Gemma2ForCausalLM",
-        "from_checkpoint": False,
-        "checkpoint_index": None,
-        "checkpoint_label_type": None,
-        "checkpoint_value": None,
-        "tokenizer_name": "gpt2",  # using wrong tokenizer to avoid gated repos
-        "window_size": 4096,
-        "attn_types": [
-            "global",
-            "local",
-            "global",
-            "local",
-            "global",
-            "local",
-            "global",
-            "local",
-            "global",
-            "local",
-            "global",
-            "local",
-            "global",
-            "local",
-            "global",
-            "local",
-        ],
-        "init_mode": "gpt2",
-        "normalization_type": "RMSPre",
-        "device": get_default_device(),
-        "n_devices": 1,
-        "attention_dir": "causal",
-        "attn_only": False,
-        "seed": None,
-        "initializer_range": 0.02,
-        "init_weights": False,
-        "scale_attn_by_inverse_layer_idx": False,
-        "positional_embedding_type": "rotary",
-        "final_rms": True,
-        "d_vocab_out": 128,
-        "parallel_attn_mlp": False,
-        "rotary_dim": 32,
-        "n_params": 2146959360,
-        "use_hook_tokens": False,
-        "gated_mlp": True,
-        "default_prepend_bos": True,
-        "dtype": torch.float32,
-        "tokenizer_prepends_bos": True,
-        "n_key_value_heads": 16,
-        "post_embedding_ln": False,
-        "rotary_base": 10000.0,
-        "trust_remote_code": False,
-        "rotary_adjacent_pairs": False,
-        "load_in_4bit": False,
-        "num_experts": None,
-        "experts_per_token": None,
-        "relative_attention_max_distance": None,
-        "relative_attention_num_buckets": None,
-        "decoder_start_token_id": None,
-        "tie_word_embeddings": False,
-        "use_normalization_before_and_after": True,
-        "attn_scores_soft_cap": 50.0,
-        "output_logits_soft_cap": 0.0,
-        "use_NTK_by_parts_rope": False,
-        "NTK_by_parts_low_freq_factor": 1.0,
-        "NTK_by_parts_high_freq_factor": 4.0,
-        "NTK_by_parts_factor": 8.0,
-    }
-    cfg = HookedTransformerConfig.from_dict(gemma_large_cfg)
-    model = load_dummy_gemma_model(cfg)
+    # Create a larger Gemma2 config for testing
+    gemma_large_cfg = Gemma2Config(
+        vocab_size=128,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=16,
+        num_attention_heads=16,
+        num_key_value_heads=16,
+        head_dim=32,
+        hidden_act="gelu_pytorch_tanh",
+        max_position_embeddings=8192,
+        initializer_range=0.02,
+        rms_norm_eps=1e-6,
+        use_cache=True,
+        pad_token_id=0,
+        eos_token_id=1,
+        bos_token_id=2,
+        tie_word_embeddings=False,
+        rope_theta=10000.0,
+        attention_bias=False,
+        attention_dropout=0.0,
+        attn_logit_softcapping=50.0,
+        final_logit_softcapping=0.0,
+        sliding_window=4096,
+    )
+    model = load_dummy_gemma_model(gemma_large_cfg)
     graph = attribute(s, model)
 
     verify_token_and_error_edges(model, graph)
@@ -375,7 +272,7 @@ def verify_large_gemma_model(s: torch.Tensor):
 
 
 def verify_gemma_2_2b(s: str):
-    model = ReplacementModel.from_pretrained("google/gemma-2-2b", "gemma")
+    model = ReplacementModel.boot_transformers("google/gemma-2-2b", "gemma")
     graph = attribute(s, model)
 
     print("Changing logit softcap to 0, as the logits will otherwise be off.")
@@ -385,7 +282,7 @@ def verify_gemma_2_2b(s: str):
 
 
 def verify_gemma_2_2b_clt(s: str):
-    model = ReplacementModel.from_pretrained("google/gemma-2-2b", "mntss/clt-gemma-2-2b-426k")
+    model = ReplacementModel.boot_transformers("google/gemma-2-2b", "mntss/clt-gemma-2-2b-426k")
     graph = attribute(s, model)
 
     print("Changing logit softcap to 0, as the logits will otherwise be off.")

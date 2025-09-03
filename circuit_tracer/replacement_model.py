@@ -1,14 +1,20 @@
 import warnings
 from collections import defaultdict
+from collections.abc import Callable
 from contextlib import contextmanager
 from functools import partial
-from collections.abc import Callable
 
 import torch
 import torch.nn.functional as F
 from torch import nn
-from transformer_lens import HookedTransformer, HookedTransformerConfig
+from transformer_lens.factories.architecture_adapter_factory import ArchitectureAdapterFactory
 from transformer_lens.hook_points import HookPoint
+from transformer_lens.model_bridge import TransformerBridge
+from transformer_lens.model_bridge.sources.transformers import (
+    boot,
+    map_default_transformer_lens_config,
+)
+from transformers.modeling_utils import PreTrainedModel
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from circuit_tracer.attribution.context import AttributionContext
@@ -61,7 +67,7 @@ class ReplacementUnembed(nn.Module):
         return self.hook_post(x)
 
 
-class ReplacementModel(HookedTransformer):
+class ReplacementModel(TransformerBridge):
     transcoders: TranscoderSet | CrossLayerTranscoder  # Support both types
     feature_input_hook: str
     feature_output_hook: str
@@ -70,31 +76,46 @@ class ReplacementModel(HookedTransformer):
     tokenizer: PreTrainedTokenizerBase
 
     @classmethod
-    def from_config(
+    def from_hf_model(
         cls,
-        config: HookedTransformerConfig,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
         transcoders: TranscoderSet | CrossLayerTranscoder,  # Accept both
-        **kwargs,
+        device: torch.device | None = None,
+        dtype: torch.dtype = torch.float32,
     ) -> "ReplacementModel":
-        """Create a ReplacementModel from a given HookedTransformerConfig and TranscoderSet
+        """Create a ReplacementModel from a given PreTrainedModel and PreTrainedTokenizerBase and TranscoderSet
 
         Args:
-            config (HookedTransformerConfig): the config of the HookedTransformer
+            model (PreTrainedModel): the model to bridge
+            tokenizer (PreTrainedTokenizerBase): the tokenizer to use
             transcoders (TranscoderSet): The transcoder set with configuration
 
         Returns:
             ReplacementModel: The loaded ReplacementModel
         """
-        model = cls(config, **kwargs)
-        model._configure_replacement_model(transcoders)
-        return model
+
+        tl_config = map_default_transformer_lens_config(model.config)
+        if device is None:
+            device = get_default_device()
+
+        adapter = ArchitectureAdapterFactory.select_architecture_adapter(tl_config)
+        adapter.cfg.device = device
+        adapter.cfg.dtype = dtype
+        rep_model = cls(model=model, adapter=adapter, tokenizer=tokenizer)
+        rep_model.enable_compatibility_mode()
+        rep_model._configure_replacement_model(transcoders)
+        return rep_model
 
     @classmethod
-    def from_pretrained_and_transcoders(
+    def boot_transformers_and_transcoders(
         cls,
         model_name: str,
         transcoders: TranscoderSet | CrossLayerTranscoder,  # Accept both
-        **kwargs,
+        hf_config_overrides: dict | None = None,
+        device: str | torch.device | None = None,
+        dtype: torch.dtype = torch.float32,
+        tokenizer: PreTrainedTokenizerBase | None = None,
     ) -> "ReplacementModel":
         """Create a ReplacementModel from the name of HookedTransformer and TranscoderSet
 
@@ -105,25 +126,29 @@ class ReplacementModel(HookedTransformer):
         Returns:
             ReplacementModel: The loaded ReplacementModel
         """
-        model = super().from_pretrained(
-            model_name,
-            fold_ln=False,
-            center_writing_weights=False,
-            center_unembed=False,
-            **kwargs,
+        bridge_model = boot(
+            model_name=model_name,
+            hf_config_overrides=hf_config_overrides,
+            device=device,
+            dtype=dtype,
+            tokenizer=tokenizer,
         )
-
+        model = cls(
+            model=bridge_model.model, tokenizer=bridge_model.tokenizer, adapter=bridge_model.adapter
+        )
+        model.enable_compatibility_mode()
         model._configure_replacement_model(transcoders)
         return model
 
     @classmethod
-    def from_pretrained(
+    def boot_transformers(
         cls,
         model_name: str,
         transcoder_set: str,
+        hf_config_overrides: dict | None = None,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
-        **kwargs,
+        tokenizer: PreTrainedTokenizerBase | None = None,
     ) -> "ReplacementModel":
         """Create a ReplacementModel from model name and transcoder config
 
@@ -139,12 +164,13 @@ class ReplacementModel(HookedTransformer):
 
         transcoders, _ = load_transcoder_from_hub(transcoder_set, device=device, dtype=dtype)
 
-        return cls.from_pretrained_and_transcoders(
+        return cls.boot_transformers_and_transcoders(
             model_name,
             transcoders,
+            hf_config_overrides=hf_config_overrides,
             device=device,
             dtype=dtype,
-            **kwargs,
+            tokenizer=tokenizer,
         )
 
     def _configure_replacement_model(self, transcoder_set: TranscoderSet | CrossLayerTranscoder):
@@ -157,10 +183,11 @@ class ReplacementModel(HookedTransformer):
         self.skip_transcoder = transcoder_set.skip_connection
         self.scan = transcoder_set.scan
 
-        for block in self.blocks:
-            block.mlp = ReplacementMLP(block.mlp)  # type: ignore
+        # TODO: figure out how to replace these with correct bridge hooks
 
-        self.unembed = ReplacementUnembed(self.unembed)
+        # for block in self.blocks:
+        #     block.mlp = ReplacementMLP(block.mlp)  # type: ignore
+        # self.unembed = ReplacementUnembed(self.unembed)
 
         self._configure_gradient_flow()
         self._deduplicate_attention_buffers()
@@ -194,7 +221,8 @@ class ReplacementModel(HookedTransformer):
             tensor.requires_grad = True
             return tensor
 
-        self.hook_embed.add_hook(enable_gradient, is_permanent=True)
+        # TODO: Figure out the correct thing to do here
+        # self.hook_embed.add_hook(enable_gradient, is_permanent=True)
 
     def _configure_skip_connection(self, block, transcoder):
         cached = {}

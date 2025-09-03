@@ -1,21 +1,21 @@
 import torch
 import torch.nn as nn
-from transformer_lens import HookedTransformerConfig
 from tqdm import tqdm
+from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 
-from circuit_tracer import attribute, Graph, ReplacementModel
+from circuit_tracer import Graph, ReplacementModel, attribute
 from circuit_tracer.transcoder.cross_layer_transcoder import CrossLayerTranscoder
 from circuit_tracer.utils import get_default_device
 
 
-def create_clt_model(cfg: HookedTransformerConfig):
+def create_clt_model(cfg: GPT2Config):
     """Create a CLT and ReplacementModel with random weights."""
     # Create CLT with 4x expansion
     clt = CrossLayerTranscoder(
-        n_layers=cfg.n_layers,
-        d_transcoder=cfg.d_model * 4,
-        d_model=cfg.d_model,
-        dtype=cfg.dtype,
+        n_layers=cfg.n_layer,
+        d_transcoder=cfg.n_embd * 4,
+        d_model=cfg.n_embd,
+        dtype=torch.float32,
         lazy_decoder=False,
     )
 
@@ -25,7 +25,9 @@ def create_clt_model(cfg: HookedTransformerConfig):
             nn.init.uniform_(param, a=-0.1, b=0.1)
 
     # Create model
-    model = ReplacementModel.from_config(cfg, clt)
+    hf_model = GPT2LMHeadModel(cfg)
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    model = ReplacementModel.from_hf_model(hf_model, tokenizer, clt)
 
     # Monkey patch all_special_ids if necessary
     type(model.tokenizer).all_special_ids = property(lambda self: [0])  # type: ignore
@@ -75,7 +77,7 @@ def verify_feature_edges(
         new_logits, new_activation_cache = model.feature_intervention(
             s,
             [(layer, pos, feature_idx, new_activation)],
-            constrained_layers=range(model.cfg.n_layers),
+            constrained_layers=range(model.cfg.n_layer),
             apply_activation_function=False,
         )
         new_logits = new_logits.squeeze(0)
@@ -115,20 +117,15 @@ def verify_feature_edges(
 def test_clt_attribution():
     """Test CLT attribution and intervention mechanism."""
     # Minimal config
-    cfg = HookedTransformerConfig.from_dict(
-        {
-            "n_layers": 4,
-            "d_model": 8,
-            "n_ctx": 32,
-            "d_head": 4,
-            "n_heads": 2,
-            "d_mlp": 32,
-            "act_fn": "gelu",
-            "d_vocab": 50,
-            "model_name": "test-clt",
-            "device": get_default_device(),
-            "tokenizer_name": "gpt2",
-        }
+    cfg = GPT2Config(
+        n_layer=4,
+        n_embd=8,
+        n_ctx=32,
+        n_head=2,
+        intermediate_size=32,
+        activation_function="gelu",
+        vocab_size=50,
+        model_type="gpt2",
     )
 
     # Create model
