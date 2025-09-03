@@ -84,7 +84,7 @@ class ReplacementModel(TransformerBridge):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
     ) -> "ReplacementModel":
-        """Create a ReplacementModel from a given PreTrainedModel and PreTrainedTokenizerBase and TranscoderSet
+        """Create a ReplacementModel from a given a Huggingface model/tokenizer and TranscoderSet
 
         Args:
             model (PreTrainedModel): the model to bridge
