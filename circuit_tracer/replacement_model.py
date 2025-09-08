@@ -12,6 +12,7 @@ from transformer_lens.hook_points import HookPoint
 from transformer_lens.model_bridge import TransformerBridge
 from transformer_lens.model_bridge.sources.transformers import (
     boot,
+    determine_architecture_from_hf_config,
     map_default_transformer_lens_config,
 )
 from transformers.modeling_utils import PreTrainedModel
@@ -99,9 +100,10 @@ class ReplacementModel(TransformerBridge):
         if device is None:
             device = get_default_device()
 
+        tl_config.architecture = determine_architecture_from_hf_config(model.config)
         adapter = ArchitectureAdapterFactory.select_architecture_adapter(tl_config)
-        adapter.cfg.device = device
-        adapter.cfg.dtype = dtype
+        adapter.cfg.device = device  # type: ignore
+        adapter.cfg.dtype = dtype  # type: ignore
         rep_model = cls(model=model, adapter=adapter, tokenizer=tokenizer)
         rep_model.enable_compatibility_mode()
         rep_model._configure_replacement_model(transcoders)
@@ -174,7 +176,7 @@ class ReplacementModel(TransformerBridge):
         )
 
     def _configure_replacement_model(self, transcoder_set: TranscoderSet | CrossLayerTranscoder):
-        transcoder_set.to(self.cfg.device, self.cfg.dtype)
+        transcoder_set.to(self.cfg.device, self.cfg.dtype)  # type: ignore
 
         self.transcoders = transcoder_set
         self.feature_input_hook = transcoder_set.feature_input_hook
@@ -190,8 +192,7 @@ class ReplacementModel(TransformerBridge):
         # self.unembed = ReplacementUnembed(self.unembed)
 
         self._configure_gradient_flow()
-        self._deduplicate_attention_buffers()
-        self.setup()
+        # self._deduplicate_attention_buffers()
 
     def _configure_gradient_flow(self):
         if isinstance(self.transcoders, TranscoderSet):
@@ -214,7 +215,13 @@ class ReplacementModel(TransformerBridge):
                 block.ln2_post.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
             self.ln_final.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
 
-        for param in self.parameters():
+        for name, param in self.named_parameters():
+            # If I don't skip these, I get the following error:
+            #  RuntimeError: you can only change requires_grad flags of leaf variables.
+            if "attn." in name:
+                continue
+            if "W_U" in name:
+                continue
             param.requires_grad = False
 
         def enable_gradient(tensor, hook):
@@ -242,14 +249,15 @@ class ReplacementModel(TransformerBridge):
             return grad_hook(skip + (acts - skip).detach())
 
         # add feature input hook
-        output_hook_parts = self.feature_input_hook.split(".")
+        input_hook_parts = _rewrite_hook(self.feature_input_hook).split(".")
         subblock = block
-        for part in output_hook_parts:
+        for part in input_hook_parts:
             subblock = getattr(subblock, part)
+        # breakpoint()
         subblock.add_hook(cache_activations, is_permanent=True)
 
         # add feature output hook and special grad hook
-        output_hook_parts = self.original_feature_output_hook.split(".")
+        output_hook_parts = _rewrite_hook(self.original_feature_output_hook).split(".")
         subblock = block
         for part in output_hook_parts:
             subblock = getattr(subblock, part)
@@ -876,3 +884,11 @@ class ReplacementModel(TransformerBridge):
     def __del__(self):
         # Prevent memory leaks
         self.reset_hooks(including_permanent=True)
+
+
+def _rewrite_hook(hook_name: str) -> str:
+    if hook_name == "hook_resid_mid":
+        return "attn.hook_out"
+    if hook_name == "hook_mlp_out":
+        return "mlp.hook_out"
+    return hook_name

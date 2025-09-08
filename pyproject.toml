@@ -15,7 +15,7 @@ dependencies = [
     "tokenizers>=0.21.0",
     "torch>=2.0.0",
     "tqdm>=4.60.0",
-    "transformer-lens>=3.0.0a0",
+    "transformer-lens @ git+https://github.com/TransformerLensOrg/TransformerLens@patch-get-params-null-checks",
     "transformers>=4.50.0",
 ]
 
@@ -28,6 +28,9 @@ circuit-tracer = "circuit_tracer.__main__:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.ruff]
 line-length = 100
