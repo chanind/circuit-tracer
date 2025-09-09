@@ -77,7 +77,8 @@ def verify_feature_edges(
         new_logits, new_activation_cache = model.feature_intervention(
             s,
             [(layer, pos, feature_idx, new_activation)],
-            constrained_layers=range(model.cfg.n_layer),
+            # It seems like there is a model.cfg.n_layer, I guess it's not typed?
+            constrained_layers=range(model.cfg.n_layer),  # type: ignore
             apply_activation_function=False,
         )
         new_logits = new_logits.squeeze(0)

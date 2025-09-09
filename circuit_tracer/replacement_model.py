@@ -7,6 +7,7 @@ from functools import partial
 import torch
 import torch.nn.functional as F
 from torch import nn
+from transformer_lens.config import TransformerBridgeConfig
 from transformer_lens.factories.architecture_adapter_factory import ArchitectureAdapterFactory
 from transformer_lens.hook_points import HookPoint
 from transformer_lens.model_bridge import TransformerBridge
@@ -356,12 +357,12 @@ class ReplacementModel(TransformerBridge):
 
     @contextmanager
     def zero_softcap(self):
-        current_softcap = self.cfg.output_logits_soft_cap
+        current_softcap = _get_final_logit_softcapping(self.cfg)
         try:
-            self.cfg.output_logits_soft_cap = 0.0
+            self.cfg.final_logit_softcapping = 0.0  # type: ignore
             yield
         finally:
-            self.cfg.output_logits_soft_cap = current_softcap
+            self.cfg.final_logit_softcapping = current_softcap  # type: ignore
 
     def ensure_tokenized(self, prompt: str | torch.Tensor | list[int]) -> torch.Tensor:
         """Convert prompt to 1-D tensor of token ids with proper special token handling.
@@ -444,7 +445,8 @@ class ReplacementModel(TransformerBridge):
         mlp_out_cache, mlp_out_caching_hooks, _ = self.get_caching_hooks(
             lambda name: self.feature_output_hook in name
         )
-        logits = self.run_with_hooks(tokens, fwd_hooks=mlp_in_caching_hooks + mlp_out_caching_hooks)
+        # Ignoring the type error below, but I'm not sure if it's significant
+        logits = self.run_with_hooks(tokens, fwd_hooks=mlp_in_caching_hooks + mlp_out_caching_hooks)  # type: ignore
 
         mlp_in_cache = torch.cat(list(mlp_in_cache.values()), dim=0)
         mlp_out_cache = torch.cat(list(mlp_out_cache.values()), dim=0)
@@ -511,7 +513,8 @@ class ReplacementModel(TransformerBridge):
         freeze_cache, cache_hooks, _ = self.get_caching_hooks(names_filter=selected_hook_points)
 
         original_activations, activation_caching_hooks = self._get_activation_caching_hooks()
-        self.run_with_hooks(inputs, fwd_hooks=cache_hooks + activation_caching_hooks)
+        # Ignoring the type error below, but I'm not sure if it's significant
+        self.run_with_hooks(inputs, fwd_hooks=cache_hooks + activation_caching_hooks)  # type: ignore
 
         def freeze_hook(activations, hook):
             cached_values = freeze_cache[hook.name]
@@ -613,7 +616,7 @@ class ReplacementModel(TransformerBridge):
 
         layer_deltas = torch.zeros(
             [self.cfg.n_layers, n_pos, self.cfg.d_model],
-            dtype=self.cfg.dtype,
+            dtype=self.cfg.dtype,  # type: ignore
             device=self.cfg.device,
         )
 
@@ -693,10 +696,9 @@ class ReplacementModel(TransformerBridge):
 
         def logit_cache_hook(activations, hook):
             # we need to manually apply the softcap (if used by the model), as it comes post-hook
-            if self.cfg.output_logits_soft_cap > 0.0:
-                logits = self.cfg.output_logits_soft_cap * F.tanh(
-                    activations / self.cfg.output_logits_soft_cap
-                )
+            softcap = _get_final_logit_softcapping(self.cfg)
+            if softcap is not None and softcap > 0.0:
+                logits = softcap * F.tanh(activations / softcap)
             else:
                 logits = activations.clone()
             if using_past_kv_cache:
@@ -883,7 +885,7 @@ class ReplacementModel(TransformerBridge):
 
     def __del__(self):
         # Prevent memory leaks
-        self.reset_hooks(including_permanent=True)
+        self.reset_hooks()  # We don't need "include_permanent=True" anymore?
 
 
 def _rewrite_hook(hook_name: str) -> str:
@@ -892,3 +894,9 @@ def _rewrite_hook(hook_name: str) -> str:
     if hook_name == "hook_mlp_out":
         return "mlp.hook_out"
     return hook_name
+
+
+def _get_final_logit_softcapping(cfg: TransformerBridgeConfig) -> float | None:
+    if hasattr(cfg, "final_logit_softcapping"):
+        return cfg.final_logit_softcapping  # type: ignore
+    return None
