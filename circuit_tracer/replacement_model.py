@@ -254,7 +254,6 @@ class ReplacementModel(TransformerBridge):
         subblock = block
         for part in input_hook_parts:
             subblock = getattr(subblock, part)
-        # breakpoint()
         subblock.add_hook(cache_activations, is_permanent=True)
 
         # add feature output hook and special grad hook
@@ -438,12 +437,14 @@ class ReplacementModel(TransformerBridge):
         assert isinstance(tokens, torch.Tensor), "Tokens must be a tensor"
         assert tokens.ndim == 1, "Tokens must be a 1D tensor"
 
+        tokens = tokens.unsqueeze(0)
+
         mlp_in_cache, mlp_in_caching_hooks, _ = self.get_caching_hooks(
-            lambda name: self.feature_input_hook in name
+            lambda name: _rewrite_hook(self.feature_input_hook) in name
         )
 
         mlp_out_cache, mlp_out_caching_hooks, _ = self.get_caching_hooks(
-            lambda name: self.feature_output_hook in name
+            lambda name: _rewrite_hook(self.feature_output_hook) in name
         )
         # Ignoring the type error below, but I'm not sure if it's significant
         logits = self.run_with_hooks(tokens, fwd_hooks=mlp_in_caching_hooks + mlp_out_caching_hooks)  # type: ignore
@@ -893,6 +894,8 @@ def _rewrite_hook(hook_name: str) -> str:
         return "attn.hook_out"
     if hook_name == "hook_mlp_out":
         return "mlp.hook_out"
+    if hook_name == "hook_mlp_out.hook_out_grad":
+        return "mlp.hook_out.hook_out_grad"
     return hook_name
 
 

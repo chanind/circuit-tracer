@@ -173,6 +173,8 @@ def _run_attribution(
     logger.info("Phase 0: Precomputing activations and vectors")
     phase_start = time.time()
     input_ids = model.ensure_tokenized(prompt)
+    if input_ids.ndim == 1:
+        input_ids = input_ids.unsqueeze(0)
 
     ctx = model.setup_attribution(input_ids)
     activation_matrix = ctx.activation_matrix
