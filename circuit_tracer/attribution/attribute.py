@@ -173,6 +173,8 @@ def _run_attribution(
     logger.info("Phase 0: Precomputing activations and vectors")
     phase_start = time.time()
     input_ids = model.ensure_tokenized(prompt)
+
+    # Need to ensure tensors are 2D due to: https://github.com/TransformerLensOrg/TransformerLens/issues/1050
     if input_ids.ndim == 1:
         input_ids = input_ids.unsqueeze(0)
 

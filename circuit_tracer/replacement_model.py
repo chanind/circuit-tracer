@@ -437,6 +437,7 @@ class ReplacementModel(TransformerBridge):
         assert isinstance(tokens, torch.Tensor), "Tokens must be a tensor"
         assert tokens.ndim == 1, "Tokens must be a 1D tensor"
 
+        # Need to ensure tensors are 2D due to: https://github.com/TransformerLensOrg/TransformerLens/issues/1050
         tokens = tokens.unsqueeze(0)
 
         mlp_in_cache, mlp_in_caching_hooks, _ = self.get_caching_hooks(
