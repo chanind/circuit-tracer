@@ -6,7 +6,6 @@ from functools import partial
 
 import torch
 import torch.nn.functional as F
-from torch import nn
 from transformer_lens.config import TransformerBridgeConfig
 from transformer_lens.factories.architecture_adapter_factory import ArchitectureAdapterFactory
 from transformer_lens.hook_points import HookPoint
@@ -29,44 +28,6 @@ from circuit_tracer.utils.hf_utils import load_transcoder_from_hub
 Intervention = tuple[
     int | torch.Tensor, int | slice | torch.Tensor, int | torch.Tensor, int | torch.Tensor
 ]
-
-
-class ReplacementMLP(nn.Module):
-    """Wrapper for a TransformerLens MLP layer that adds in extra hooks"""
-
-    def __init__(self, old_mlp: nn.Module):
-        super().__init__()
-        self.old_mlp = old_mlp
-        self.hook_in = HookPoint()
-        self.hook_out = HookPoint()
-
-    def forward(self, x):
-        x = self.hook_in(x)
-        mlp_out = self.old_mlp(x)
-        return self.hook_out(mlp_out)
-
-
-class ReplacementUnembed(nn.Module):
-    """Wrapper for a TransformerLens Unembed layer that adds in extra hooks"""
-
-    def __init__(self, old_unembed: nn.Module):
-        super().__init__()
-        self.old_unembed = old_unembed
-        self.hook_pre = HookPoint()
-        self.hook_post = HookPoint()
-
-    @property
-    def W_U(self):
-        return self.old_unembed.W_U
-
-    @property
-    def b_U(self):
-        return self.old_unembed.b_U
-
-    def forward(self, x):
-        x = self.hook_pre(x)
-        x = self.old_unembed(x)
-        return self.hook_post(x)
 
 
 class ReplacementModel(TransformerBridge):
@@ -186,14 +147,7 @@ class ReplacementModel(TransformerBridge):
         self.skip_transcoder = transcoder_set.skip_connection
         self.scan = transcoder_set.scan
 
-        # TODO: figure out how to replace these with correct bridge hooks
-
-        # for block in self.blocks:
-        #     block.mlp = ReplacementMLP(block.mlp)  # type: ignore
-        # self.unembed = ReplacementUnembed(self.unembed)
-
         self._configure_gradient_flow()
-        # self._deduplicate_attention_buffers()
 
     def _configure_gradient_flow(self):
         if isinstance(self.transcoders, TranscoderSet):
@@ -229,8 +183,7 @@ class ReplacementModel(TransformerBridge):
             tensor.requires_grad = True
             return tensor
 
-        # TODO: Figure out the correct thing to do here
-        # self.hook_embed.add_hook(enable_gradient, is_permanent=True)
+        self.embed.hook_out.add_hook(enable_gradient, is_permanent=True)
 
     def _configure_skip_connection(self, block, transcoder):
         cached = {}
