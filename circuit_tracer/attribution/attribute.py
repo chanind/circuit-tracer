@@ -191,7 +191,19 @@ def _run_attribution(
     logger.info("Phase 1: Running forward pass")
     phase_start = time.time()
     with ctx.install_hooks(model):
-        residual = model.forward(input_ids.expand(batch_size, -1), stop_at_layer=model.cfg.n_layers)
+        cache = {}
+
+        def _cache_ln_final_in_hook(acts, hook):
+            cache["ln_final.hook_in"] = acts
+
+        model.run_with_hooks(
+            input_ids.expand(batch_size, -1),
+            fwd_hooks=[("ln_final.hook_in", _cache_ln_final_in_hook)],
+        )
+        model.run_with_cache(input_ids.expand(batch_size, -1), names_filter="ln_final.hook_in")
+        residual = cache["ln_final.hook_in"]
+        # something strange is happening here, where `residual` requires_grad
+        # but `model.ln_final(residual)` does not
         ctx._resid_activations[-1] = model.ln_final(residual)
     logger.info(f"Forward pass completed in {time.time() - phase_start:.2f}s")
 
