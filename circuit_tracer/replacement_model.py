@@ -67,7 +67,6 @@ class ReplacementModel(TransformerBridge):
         adapter.cfg.device = device  # type: ignore
         adapter.cfg.dtype = dtype  # type: ignore
         rep_model = cls(model=model, adapter=adapter, tokenizer=tokenizer)
-        rep_model.enable_compatibility_mode()
         rep_model._configure_replacement_model(transcoders)
         return rep_model
 
@@ -100,7 +99,6 @@ class ReplacementModel(TransformerBridge):
         model = cls(
             model=bridge_model.model, tokenizer=bridge_model.tokenizer, adapter=bridge_model.adapter
         )
-        model.enable_compatibility_mode()
         model._configure_replacement_model(transcoders)
         return model
 
@@ -138,6 +136,8 @@ class ReplacementModel(TransformerBridge):
         )
 
     def _configure_replacement_model(self, transcoder_set: TranscoderSet | CrossLayerTranscoder):
+        self.enable_compatibility_mode()
+
         transcoder_set.to(self.cfg.device, self.cfg.dtype)  # type: ignore
 
         self.transcoders = transcoder_set
@@ -152,10 +152,10 @@ class ReplacementModel(TransformerBridge):
     def _configure_gradient_flow(self):
         if isinstance(self.transcoders, TranscoderSet):
             for layer, transcoder in enumerate(self.transcoders):
-                self._configure_skip_connection(self.blocks[layer], transcoder)
+                self._configure_skip_connection(layer, transcoder)
         else:
             for layer in range(self.cfg.n_layers):
-                self._configure_skip_connection(self.blocks[layer], self.transcoders)
+                self._configure_skip_connection(layer, self.transcoders)
 
         def stop_gradient(acts, hook):
             return acts.detach()
@@ -185,7 +185,8 @@ class ReplacementModel(TransformerBridge):
 
         self.embed.hook_out.add_hook(enable_gradient, is_permanent=True)
 
-    def _configure_skip_connection(self, block, transcoder):
+    def _configure_skip_connection(self, layer: int, transcoder):
+        block = self.blocks[layer]
         cached = {}
 
         def cache_activations(acts, hook):
@@ -210,7 +211,8 @@ class ReplacementModel(TransformerBridge):
         subblock.add_hook(cache_activations, is_permanent=True)
 
         # add feature output hook and special grad hook
-        output_hook_parts = _rewrite_hook(self.original_feature_output_hook).split(".")
+        hook_out_str = _rewrite_hook(self.original_feature_output_hook)
+        output_hook_parts = hook_out_str.split(".")
         subblock = block
         for part in output_hook_parts:
             subblock = getattr(subblock, part)
@@ -219,6 +221,8 @@ class ReplacementModel(TransformerBridge):
             partial(add_skip_connection, grad_hook=subblock.hook_out_grad),
             is_permanent=True,
         )
+        # this is super hacky, but we need this in the hook registry or hooks won't be picked up
+        self._hook_registry[f"blocks.{layer}.{hook_out_str}.hook_out_grad"] = subblock.hook_out_grad
 
     def _deduplicate_attention_buffers(self):
         """
@@ -412,7 +416,7 @@ class ReplacementModel(TransformerBridge):
         error_vectors = mlp_out_cache - attribution_data["reconstruction"]
 
         error_vectors[:, 0] = 0
-        token_vectors = self.W_E[tokens].detach()  # (n_pos, d_model)
+        token_vectors = self.embed.W_E[tokens].detach()  # (n_pos, d_model)
 
         return AttributionContext(
             activation_matrix=attribution_data["activation_matrix"],
