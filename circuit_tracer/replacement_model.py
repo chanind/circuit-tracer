@@ -469,7 +469,9 @@ class ReplacementModel(TransformerBridge):
                     continue
                 selected_hook_points.append(hook_point)
 
-        freeze_cache, cache_hooks, _ = self.get_caching_hooks(names_filter=selected_hook_points)
+        freeze_cache, cache_hooks, _ = self.get_caching_hooks(
+            names_filter=lambda name: name in selected_hook_points
+        )
 
         original_activations, activation_caching_hooks = self._get_activation_caching_hooks()
         # Ignoring the type error below, but I'm not sure if it's significant

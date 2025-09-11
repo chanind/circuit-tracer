@@ -317,7 +317,7 @@ def _run_attribution(
     full_edge_matrix[-n_logits:] = edge_matrix[max_feature_nodes:]
 
     graph = Graph(
-        input_string=model.tokenizer.decode(input_ids),
+        input_string=model.tokenizer.decode(input_ids[0]),
         input_tokens=input_ids,
         logit_tokens=logit_idx,
         logit_probabilities=logit_p,
