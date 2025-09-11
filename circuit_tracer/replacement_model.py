@@ -226,7 +226,9 @@ class ReplacementModel(TransformerBridge):
             is_permanent=True,
         )
         # this is super hacky, but we need this in the hook registry or hooks won't be picked up
-        self._hook_registry[f"blocks.{layer}.{hook_out_str}.hook_out_grad"] = subblock.hook_out_grad
+        name = f"blocks.{layer}.{hook_out_str}.hook_out_grad"
+        self._hook_registry[name] = subblock.hook_out_grad
+        subblock.hook_out_grad.name = name
 
     def _deduplicate_attention_buffers(self):
         """
@@ -464,7 +466,6 @@ class ReplacementModel(TransformerBridge):
             if any(
                 hookpoint_to_freeze in hook_point for hookpoint_to_freeze in hookpoints_to_freeze
             ):
-                # don't freeze feature outputs if the layer is not in the constrained range
                 if (
                     self.feature_output_hook in hook_point
                     and constrained_layers
