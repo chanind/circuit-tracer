@@ -204,7 +204,8 @@ def _run_attribution(
         residual = cache["ln_final.hook_in"]
         # something strange is happening here, where `residual` requires_grad
         # but `model.ln_final(residual)` does not
-        ctx._resid_activations[-1] = model.ln_final(residual)
+        # seemingly, calling model.ln_final._original_component(residual) works??
+        ctx._resid_activations[-1] = model.ln_final._original_component(residual)
     logger.info(f"Forward pass completed in {time.time() - phase_start:.2f}s")
 
     if offload:
