@@ -68,14 +68,15 @@ def test_TransformerBridge_gpt2_behaves_like_HookedTransformer_gpt2():
     legacy_logits, legacy_cache = legacy_gpt2.run_with_cache(test_inputs)
     bridge_logits, bridge_cache = bridge_gpt2.run_with_cache(test_inputs)
 
-    def assert_hook_close(legacy_cache, bridge_cache, hook):
-        assert torch.allclose(
-            legacy_cache[hook],
-            bridge_cache[hook],
-            atol=1e-2,
-            rtol=1e-2,
-        ), f"{hook} is not close"
-
     assert torch.allclose(legacy_logits, bridge_logits)  # type: ignore
     for layer in range(12):
-        assert_hook_close(legacy_cache, bridge_cache, f"blocks.{layer}.hook_resid_mid")
+        assert torch.allclose(
+            legacy_cache[f"blocks.{layer}.hook_resid_mid"],
+            bridge_cache[f"blocks.{layer}.hook_resid_mid"],
+            atol=1e-2,
+            rtol=1e-2,
+        )
+    # for shared_hook in legacy_cache.keys() & bridge_cache.keys():
+    #     assert torch.allclose(
+    #         legacy_cache[shared_hook], bridge_cache[shared_hook], atol=1e-2, rtol=1e-2
+    #     ), f"{shared_hook} is not close"

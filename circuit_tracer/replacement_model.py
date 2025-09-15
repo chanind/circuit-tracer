@@ -62,8 +62,13 @@ class ReplacementModel(TransformerBridge):
         if device is None:
             device = get_default_device()
 
-        tl_config.architecture = determine_architecture_from_hf_config(model.config)
-        adapter = ArchitectureAdapterFactory.select_architecture_adapter(tl_config)
+        architecture = determine_architecture_from_hf_config(model.config)
+
+        # Convert to TransformerBridgeConfig with unified architecture
+        bridge_config = TransformerBridgeConfig.from_dict(tl_config.__dict__)
+        bridge_config.architecture = architecture
+
+        adapter = ArchitectureAdapterFactory.select_architecture_adapter(bridge_config)
         adapter.cfg.device = device  # type: ignore
         adapter.cfg.dtype = dtype  # type: ignore
         rep_model = cls(model=model, adapter=adapter, tokenizer=tokenizer)
@@ -136,7 +141,7 @@ class ReplacementModel(TransformerBridge):
         )
 
     def _configure_replacement_model(self, transcoder_set: TranscoderSet | CrossLayerTranscoder):
-        self.enable_compatibility_mode()
+        self.enable_compatibility_mode(no_processing=True)
 
         transcoder_set.to(self.cfg.device, self.cfg.dtype)  # type: ignore
 
