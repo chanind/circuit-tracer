@@ -11,11 +11,12 @@ from transformer_lens import HookedTransformer, HookedTransformerConfig
 from transformer_lens.hook_points import HookPoint
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from circuit_tracer.attribution.context import AttributionContext
 from circuit_tracer.transcoder import TranscoderSet
 from circuit_tracer.transcoder.cross_layer_transcoder import CrossLayerTranscoder
 from circuit_tracer.utils import get_default_device
 from circuit_tracer.utils.hf_utils import load_transcoder_from_hub
+
+from .attribution.context import AttributionContext
 
 # Type definition for an intervention tuple (layer, position, feature_idx, value)
 Intervention = tuple[

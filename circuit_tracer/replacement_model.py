@@ -861,7 +861,7 @@ class ReplacementModel(TransformerBridge):
 
 def _rewrite_hook(hook_name: str) -> str:
     if hook_name == "hook_resid_mid":
-        return "attn.hook_out"
+        return "ln2.hook_in"
     if hook_name == "hook_mlp_out":
         return "mlp.hook_out"
     if hook_name == "hook_mlp_out.hook_out_grad":
