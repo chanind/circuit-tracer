@@ -42,9 +42,10 @@ def get_gpt2_transcoder_set() -> TranscoderSet:
     )
 
 
-def test_bridge_gpt2_replacement_model_behaves_like_legacy_replacement_model(
+@pytest.fixture
+def replacement_model_pair(
     gpt2_transcoder_set_pair: tuple[TranscoderSet, TranscoderSet],
-):
+) -> tuple[ReplacementModel, LegacyReplacementModel]:
     hf_model = GPT2LMHeadModel.from_pretrained("gpt2", device_map="cpu")
     hf_tokenizer = AutoTokenizer.from_pretrained("gpt2")
     legacy_model = LegacyReplacementModel.from_pretrained_and_transcoders(
@@ -53,11 +54,18 @@ def test_bridge_gpt2_replacement_model_behaves_like_legacy_replacement_model(
     bridge_model = ReplacementModel.from_hf_model(
         hf_model, hf_tokenizer, gpt2_transcoder_set_pair[1], device=torch.device("cpu")
     )
+    return (bridge_model, legacy_model)
 
-    test_inputs = hf_tokenizer.encode("Hello, world!", return_tensors="pt")
+
+def test_bridge_gpt2_replacement_model_behaves_like_legacy_replacement_model(
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    bridge_model, legacy_model = replacement_model_pair
+
+    test_inputs = bridge_model.tokenizer.encode("Hello, world!", return_tensors="pt")
 
     legacy_logits, legacy_cache = legacy_model.run_with_cache(test_inputs)
-    bridge_logits, bridge_cache = bridge_model.run_with_cache(test_inputs)
+    bridge_logits, bridge_cache = bridge_model.run_with_cache(test_inputs)  # type: ignore
 
     assert torch.allclose(legacy_logits, bridge_logits)  # type: ignore
 
@@ -87,8 +95,8 @@ def test_bridge_gpt2_replacement_model_behaves_like_legacy_replacement_model(
             rtol=1e-4,
         )
 
-    bridge_ctx = bridge_model.setup_attribution(test_inputs)
-    legacy_ctx = legacy_model.setup_attribution(test_inputs)
+    bridge_ctx = bridge_model.setup_attribution(test_inputs)  # type: ignore
+    legacy_ctx = legacy_model.setup_attribution(test_inputs)  # type: ignore
     assert torch.allclose(
         bridge_ctx.activation_matrix.to_dense(),
         legacy_ctx.activation_matrix.to_dense(),
@@ -136,7 +144,7 @@ def test_TransformerBridge_hooks_ignores_backward_hooks():
     with hooked_model.hooks(bwd_hooks=[("blocks.0.hook_mlp_out", make_test_hook("hooked"))]):
         output = hooked_model(test_input)
         # Check that the backward hook was registered
-        assert len(hooked_model.blocks[0].hook_mlp_out.bwd_hooks) > 0
+        assert len(hooked_model.blocks[0].hook_mlp_out.bwd_hooks) > 0  # type: ignore
 
         # Trigger backward pass
         output.sum().backward()
@@ -157,22 +165,15 @@ def test_TransformerBridge_hooks_ignores_backward_hooks():
 
 
 def test_bridge_context_compute_batch_behaves_like_legacy_context_compute_batch(
-    gpt2_transcoder_set_pair: tuple[TranscoderSet, TranscoderSet],
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
 ):
-    hf_model = GPT2LMHeadModel.from_pretrained("gpt2", device_map="cpu")
-    hf_tokenizer = AutoTokenizer.from_pretrained("gpt2")
-    bridge_model = ReplacementModel.from_hf_model(
-        hf_model, hf_tokenizer, gpt2_transcoder_set_pair[0], device=torch.device("cpu")
-    )
-    legacy_model = LegacyReplacementModel.from_pretrained_and_transcoders(
-        "gpt2", gpt2_transcoder_set_pair[1], device="cpu"
-    )
+    bridge_model, legacy_model = replacement_model_pair
 
-    test_inputs = hf_tokenizer.encode("Hello, world!", return_tensors="pt")
+    test_inputs = bridge_model.tokenizer.encode("Hello, world!", return_tensors="pt")
 
     # Setup attribution contexts
-    bridge_ctx = bridge_model.setup_attribution(test_inputs)
-    legacy_ctx = legacy_model.setup_attribution(test_inputs)
+    bridge_ctx = bridge_model.setup_attribution(test_inputs)  # type: ignore
+    legacy_ctx = legacy_model.setup_attribution(test_inputs)  # type: ignore
 
     # Run forward passes to populate residual activations
     with bridge_ctx.install_hooks(bridge_model):
@@ -182,14 +183,14 @@ def test_bridge_context_compute_batch_behaves_like_legacy_context_compute_batch(
             cache["ln_final.hook_in"] = acts
 
         bridge_model.run_with_hooks(
-            test_inputs.expand(32, -1),
+            test_inputs.expand(32, -1),  # type: ignore
             fwd_hooks=[("ln_final.hook_in", _cache_ln_final_in_hook)],
         )
         residual = cache["ln_final.hook_in"]
         bridge_ctx._resid_activations[-1] = bridge_model.ln_final._original_component(residual)
 
     with legacy_ctx.install_hooks(legacy_model):
-        legacy_model.run_with_cache(test_inputs.expand(32, -1), names_filter="ln_final.hook_in")
+        legacy_model.run_with_cache(test_inputs.expand(32, -1), names_filter="ln_final.hook_in")  # type: ignore
         residual = legacy_model.ln_final(legacy_ctx._resid_activations[-1])
         legacy_ctx._resid_activations[-1] = residual
 
@@ -202,14 +203,14 @@ def test_bridge_context_compute_batch_behaves_like_legacy_context_compute_batch(
     layers = torch.full((batch_size,), n_layers)
     positions = torch.full((batch_size,), n_pos - 1)
 
-    bridge_rows = bridge_ctx.compute_batch(
+    legacy_rows = legacy_ctx.compute_batch(
         layers=layers,
         positions=positions,
         inject_values=inject_values,
         retain_graph=True,
     )
 
-    legacy_rows = legacy_ctx.compute_batch(
+    bridge_rows = bridge_ctx.compute_batch(
         layers=layers,
         positions=positions,
         inject_values=inject_values,
@@ -243,16 +244,9 @@ def test_bridge_context_compute_batch_behaves_like_legacy_context_compute_batch(
 
 
 def test_bridge_attribute_behaves_like_legacy_attribute(
-    gpt2_transcoder_set_pair: tuple[TranscoderSet, TranscoderSet],
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
 ):
-    hf_model = GPT2LMHeadModel.from_pretrained("gpt2", device_map="cpu")
-    hf_tokenizer = AutoTokenizer.from_pretrained("gpt2")
-    bridge_model = ReplacementModel.from_hf_model(
-        hf_model, hf_tokenizer, gpt2_transcoder_set_pair[0], device=torch.device("cpu")
-    )
-    legacy_model = LegacyReplacementModel.from_pretrained_and_transcoders(
-        "gpt2", gpt2_transcoder_set_pair[1], device="cpu"
-    )
+    bridge_model, legacy_model = replacement_model_pair
 
     prompt = torch.tensor([[0, 1, 2, 3, 4, 5]])
     bridge_graph = attribute(
