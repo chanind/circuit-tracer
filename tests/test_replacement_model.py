@@ -115,6 +115,54 @@ def test_bridge_gpt2_replacement_model_behaves_like_legacy_replacement_model(
     )
 
 
+def test_TransformerBridge_backward_gradients_differ_from_HookedTransformer():
+    """
+    This is a bug in TransformerLens where backward hooks see different gradient values
+    in TransformerBridge vs HookedTransformer, even though forward passes are identical.
+    Until this test passes, we will struggle to get the bridge code to work.
+    """
+    # Create both models with the same configuration
+    hooked_model = HookedTransformer.from_pretrained_no_processing("gpt2", device_map="cpu")
+    bridge_model: TransformerBridge = TransformerBridge.boot_transformers("gpt2", device="cpu")  # type: ignore
+    bridge_model.enable_compatibility_mode(no_processing=True)
+
+    test_input = torch.tensor([[1, 2, 3]])
+
+    # Collect gradient sums from backward hooks
+    hooked_grad_sum = torch.zeros(1)
+    bridge_grad_sum = torch.zeros(1)
+
+    def sum_hooked_grads(grad, hook=None):
+        nonlocal hooked_grad_sum
+        hooked_grad_sum = grad.sum()
+        return None
+
+    def sum_bridge_grads(grad, hook=None):
+        nonlocal bridge_grad_sum
+        bridge_grad_sum = grad.sum()
+        return None
+
+    # Run with HookedTransformer
+    hooked_model.zero_grad()
+    with hooked_model.hooks(bwd_hooks=[("blocks.0.hook_mlp_out", sum_hooked_grads)]):
+        hooked_out = hooked_model(test_input)
+        hooked_out.sum().backward()
+
+    # Run with TransformerBridge
+    bridge_model.zero_grad()
+    with bridge_model.hooks(bwd_hooks=[("blocks.0.hook_mlp_out", sum_bridge_grads)]):
+        bridge_out = bridge_model(test_input)
+        bridge_out.sum().backward()
+
+    assert torch.allclose(hooked_out, bridge_out, atol=1e-2, rtol=1e-2), (
+        f"Output differs by {abs(hooked_out - bridge_out).item():.6f}"
+    )
+    # This assertion demonstrates the bug - gradient values differ
+    assert torch.allclose(hooked_grad_sum, bridge_grad_sum, atol=1e-2, rtol=1e-2), (
+        f"Gradient sums differ by {abs(hooked_grad_sum - bridge_grad_sum).item():.6f}"
+    )
+
+
 def test_TransformerBridge_hooks_ignores_backward_hooks():
     """Minimal test demonstrating that TransformerBridge.hooks() doesn't register backward hooks.
 
