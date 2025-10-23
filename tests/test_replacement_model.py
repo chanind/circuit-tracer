@@ -129,17 +129,17 @@ def test_TransformerBridge_backward_gradients_differ_from_HookedTransformer():
     test_input = torch.tensor([[1, 2, 3]])
 
     # Collect gradient sums from backward hooks
-    hooked_grad_sum = torch.zeros(1)
-    bridge_grad_sum = torch.zeros(1)
+    hooked_grad = None
+    bridge_grad = None
 
     def sum_hooked_grads(grad, hook=None):
-        nonlocal hooked_grad_sum
-        hooked_grad_sum = grad.sum()
+        nonlocal hooked_grad
+        hooked_grad = grad.clone()
         return None
 
     def sum_bridge_grads(grad, hook=None):
-        nonlocal bridge_grad_sum
-        bridge_grad_sum = grad.sum()
+        nonlocal bridge_grad
+        bridge_grad = grad.clone()
         return None
 
     # Run with HookedTransformer
@@ -157,10 +157,12 @@ def test_TransformerBridge_backward_gradients_differ_from_HookedTransformer():
     assert torch.allclose(hooked_out, bridge_out, atol=1e-2, rtol=1e-2), (
         f"Output differs by {abs(hooked_out - bridge_out).item():.6f}"
     )
+
+    assert hooked_grad is not None
+    assert bridge_grad is not None
+
     # This assertion demonstrates the bug - gradient values differ
-    assert torch.allclose(hooked_grad_sum, bridge_grad_sum, atol=1e-2, rtol=1e-2), (
-        f"Gradient sums differ by {abs(hooked_grad_sum - bridge_grad_sum).item():.6f}"
-    )
+    assert torch.allclose(hooked_grad, bridge_grad, atol=1e-2, rtol=1e-2)
 
 
 def test_TransformerBridge_run_with_cache_vs_forward():
