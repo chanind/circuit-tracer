@@ -163,6 +163,78 @@ def test_TransformerBridge_backward_gradients_differ_from_HookedTransformer():
     )
 
 
+def test_TransformerBridge_run_with_cache_vs_forward():
+    bridge_model: TransformerBridge = TransformerBridge.boot_transformers("gpt2", device="cpu")  # type: ignore
+    bridge_model.enable_compatibility_mode(no_processing=True)
+
+    test_input = torch.tensor([[1, 2, 3]])
+    bridge_logits_cache, _ = bridge_model.run_with_cache(test_input)
+    bridge_logits_manual = bridge_model(test_input)
+
+    assert torch.allclose(bridge_logits_cache, bridge_logits_manual, atol=1e-2)
+
+
+def test_TransformerBridge_run_with_cache():
+    """
+    This is a bug in TransformerLens where TransformerBridge.run_with_cache() returns
+    incorrect cached activation values, even though manual hooks work correctly.
+    The issue only occurs when caching all hooks - using names_filter works correctly.
+    """
+    # Create both models with the same configuration
+    hooked_model = HookedTransformer.from_pretrained_no_processing("gpt2", device_map="cpu")
+    bridge_model: TransformerBridge = TransformerBridge.boot_transformers("gpt2", device="cpu")  # type: ignore
+    bridge_model.enable_compatibility_mode(no_processing=True)
+
+    test_input = torch.tensor([[1, 2, 3]])
+
+    # Method 1: run_with_cache (buggy for TransformerBridge)
+    _, hooked_cache = hooked_model.run_with_cache(test_input)
+    _, bridge_cache = bridge_model.run_with_cache(test_input)
+
+    # Method 2: Manual hooks (correct for both models)
+    manual_cache = {}
+
+    def make_cache_hook(name):
+        def hook_fn(acts, hook):
+            manual_cache[name] = acts.clone()
+            return acts
+
+        return hook_fn
+
+    hooked_model.reset_hooks()
+    with hooked_model.hooks(fwd_hooks=[("blocks.0.hook_mlp_out", make_cache_hook("hooked"))]):
+        hooked_model(test_input)
+
+    bridge_model.reset_hooks()
+    with bridge_model.hooks(fwd_hooks=[("blocks.0.hook_mlp_out", make_cache_hook("bridge"))]):
+        bridge_model(test_input)
+
+    # Demonstrate that using names_filter DOES work correctly
+    _, bridge_cache_filtered = bridge_model.run_with_cache(
+        test_input, names_filter=lambda name: name == "blocks.0.hook_mlp_out"
+    )
+
+    # the manual values match the hooked values
+    assert torch.allclose(manual_cache["hooked"], manual_cache["bridge"], atol=1e-4)
+
+    assert torch.allclose(
+        bridge_cache_filtered["blocks.0.hook_mlp_out"], manual_cache["bridge"], atol=1e-4
+    )
+
+    # Verify cache values match manual hooks for HookedTransformer
+    assert torch.allclose(hooked_cache["blocks.0.hook_mlp_out"], manual_cache["hooked"], atol=1e-5)
+
+    # This assertion demonstrates the bug - TransformerBridge run_with_cache gives wrong values
+    assert torch.allclose(
+        bridge_cache["blocks.0.hook_mlp_out"], manual_cache["bridge"], atol=1e-2, rtol=1e-2
+    ), (
+        f"TransformerBridge run_with_cache gives incorrect cached values! "
+        f"Cache sum: {bridge_cache['blocks.0.hook_mlp_out'].sum():.6f}, "
+        f"Manual hooks sum: {manual_cache['bridge'].sum():.6f}, "
+        f"Diff: {(bridge_cache['blocks.0.hook_mlp_out'] - manual_cache['bridge']).abs().max():.6f}"
+    )
+
+
 def test_TransformerBridge_hooks_ignores_backward_hooks():
     """Minimal test demonstrating that TransformerBridge.hooks() doesn't register backward hooks.
 
