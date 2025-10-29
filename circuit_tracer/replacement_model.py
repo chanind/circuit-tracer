@@ -477,18 +477,19 @@ class ReplacementModel(TransformerBridge):
         if constrained_layers:
             if set(range(self.cfg.n_layers)).issubset(set(constrained_layers)):
                 hookpoints_to_freeze.append("hook_scale")
-            hookpoints_to_freeze.append(self.feature_output_hook)
+            hookpoints_to_freeze.append(_rewrite_hook(self.feature_output_hook))
             if self.skip_transcoder:
-                hookpoints_to_freeze.append(self.feature_input_hook)
+                hookpoints_to_freeze.append(_rewrite_hook(self.feature_input_hook))
 
         # only freeze outputs in constrained range
         selected_hook_points = []
+        rewritten_feature_output_hook = _rewrite_hook(self.feature_output_hook)
         for hook_point, hook_obj in self.hook_dict.items():
             if any(
                 hookpoint_to_freeze in hook_point for hookpoint_to_freeze in hookpoints_to_freeze
             ):
                 if (
-                    self.feature_output_hook in hook_point
+                    rewritten_feature_output_hook in hook_point
                     and constrained_layers
                     and hook_obj.layer() not in constrained_layers
                 ):
@@ -512,10 +513,11 @@ class ReplacementModel(TransformerBridge):
             )
             return cached_values
 
+        rewritten_feature_input_hook = _rewrite_hook(self.feature_input_hook)
         fwd_hooks = [
             (hookpoint, freeze_hook)
             for hookpoint in freeze_cache.keys()
-            if self.feature_input_hook not in hookpoint
+            if rewritten_feature_input_hook not in hookpoint
         ]
 
         if not (constrained_layers and self.skip_transcoder):
@@ -693,7 +695,7 @@ class ReplacementModel(TransformerBridge):
             else:
                 cached_logits[0] = logits
 
-        all_hooks.append(("unembed.hook_post", logit_cache_hook))
+        all_hooks.append(("unembed.hook_out", logit_cache_hook))
 
         return all_hooks, cached_logits, activation_cache
 
@@ -853,7 +855,7 @@ class ReplacementModel(TransformerBridge):
         for name, hook in hooks:
             self.add_hook(name, hook)
 
-        self.add_hook("unembed.hook_post", clear_and_add_hooks)
+        self.add_hook("unembed.hook_out", clear_and_add_hooks)
 
         generation: str = self.generate(inputs, **kwargs)  # type:ignore
         self.reset_hooks()
