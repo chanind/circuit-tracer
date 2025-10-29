@@ -42,6 +42,7 @@ select = [
     "F",   # pyflakes
     "TID", # flake8-tidy-imports (includes TID251 for banned-api)
 ]
+ignore = ["E501"] # line too long
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "typing.Union".msg = "Use `|` instead"
