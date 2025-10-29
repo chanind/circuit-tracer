@@ -547,11 +547,43 @@ def test_bridge_attribute_behaves_like_legacy_attribute(
     assert torch.allclose(bridge_graph.selected_features, legacy_graph.selected_features)
     assert bridge_graph.scan == legacy_graph.scan
 
+    # first at least assert the non-zero elements are the same
+    assert torch.allclose(bridge_graph.adjacency_matrix != 0, legacy_graph.adjacency_matrix != 0)
+
     assert torch.allclose(
         bridge_graph.adjacency_matrix,
         legacy_graph.adjacency_matrix,
         atol=1e-2,
         rtol=1e-2,
+    )
+
+
+def test_bridge_setup_attribution_behaves_like_legacy_setup_attribution(
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    bridge_model, legacy_model = replacement_model_pair
+
+    test_inputs = bridge_model.tokenizer.encode("Hello, world!", return_tensors="pt")
+
+    bridge_ctx = bridge_model.setup_attribution(test_inputs)  # type: ignore
+    legacy_ctx = legacy_model.setup_attribution(test_inputs)  # type: ignore
+
+    assert torch.allclose(bridge_ctx.logits, legacy_ctx.logits, atol=1e-2, rtol=1e-2)
+    assert torch.allclose(
+        bridge_ctx.activation_matrix.to_dense(),
+        legacy_ctx.activation_matrix.to_dense(),
+        atol=1e-2,
+        rtol=1e-2,
+    )
+    assert torch.allclose(bridge_ctx.error_vectors, legacy_ctx.error_vectors, atol=1e-2, rtol=1e-2)
+    assert torch.allclose(bridge_ctx.token_vectors, legacy_ctx.token_vectors, atol=1e-2, rtol=1e-2)
+    assert torch.allclose(bridge_ctx.decoder_vecs, legacy_ctx.decoder_vecs, atol=1e-2, rtol=1e-2)
+    assert torch.allclose(bridge_ctx.encoder_vecs, legacy_ctx.encoder_vecs, atol=1e-2, rtol=1e-2)
+    assert torch.allclose(
+        bridge_ctx.encoder_to_decoder_map, legacy_ctx.encoder_to_decoder_map, atol=1e-2, rtol=1e-2
+    )
+    assert torch.allclose(
+        bridge_ctx.decoder_locations, legacy_ctx.decoder_locations, atol=1e-2, rtol=1e-2
     )
 
 
