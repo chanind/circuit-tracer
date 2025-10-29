@@ -94,6 +94,105 @@ def test_bridge_gpt2_replacement_model_behaves_like_legacy_replacement_model(
             atol=1e-4,
             rtol=1e-4,
         )
+        # Test hooks configured in _configure_gradient_flow
+        assert torch.allclose(
+            legacy_cache[f"blocks.{layer}.attn.hook_pattern"],
+            bridge_cache[f"blocks.{layer}.attn.hook_pattern"],
+            atol=1e-4,
+            rtol=1e-4,
+        )
+        assert torch.allclose(
+            legacy_cache[f"blocks.{layer}.ln1.hook_scale"],
+            bridge_cache[f"blocks.{layer}.ln1.hook_scale"],
+            atol=1e-4,
+            rtol=1e-4,
+        )
+        assert torch.allclose(
+            legacy_cache[f"blocks.{layer}.ln2.hook_scale"],
+            bridge_cache[f"blocks.{layer}.ln2.hook_scale"],
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+    # Test ln_final.hook_scale and embed hook from _configure_gradient_flow
+    assert torch.allclose(
+        legacy_cache["ln_final.hook_scale"],
+        bridge_cache["ln_final.hook_scale"],
+        atol=1e-4,
+        rtol=1e-4,
+    )
+    # embed.hook_out is cached as "hook_embed" in the ActivationCache
+    assert torch.allclose(
+        legacy_cache["hook_embed"],
+        bridge_cache["hook_embed"],
+        atol=1e-4,
+        rtol=1e-4,
+    )
+
+    # Test backward hooks - verify that the SAME hooks are called with the SAME gradients
+    # in both bridge and legacy models. The behavior should be identical.
+    legacy_grads = {}
+    bridge_grads = {}
+
+    def make_backward_hook(grad_dict, name):
+        def hook_fn(grad, hook=None):
+            if grad is not None:
+                grad_dict[name] = grad.clone()
+            return None
+
+        return hook_fn
+
+    # Build comprehensive list of ALL backward hooks to test from _configure_gradient_flow
+    # This includes hooks that may or may not receive gradients
+    all_bwd_hooks_to_test = []
+    for layer in range(12):
+        all_bwd_hooks_to_test.append(f"blocks.{layer}.hook_resid_mid")
+        all_bwd_hooks_to_test.append(f"blocks.{layer}.hook_mlp_out")
+        all_bwd_hooks_to_test.append(f"blocks.{layer}.attn.hook_pattern")
+        all_bwd_hooks_to_test.append(f"blocks.{layer}.ln1.hook_scale")
+        all_bwd_hooks_to_test.append(f"blocks.{layer}.ln2.hook_scale")
+    all_bwd_hooks_to_test.append("ln_final.hook_scale")
+    all_bwd_hooks_to_test.append("hook_embed")
+
+    # Run backward pass with legacy model
+    legacy_model.zero_grad()
+    legacy_bwd_hooks = [
+        (name, make_backward_hook(legacy_grads, name)) for name in all_bwd_hooks_to_test
+    ]
+    with legacy_model.hooks(bwd_hooks=legacy_bwd_hooks):
+        legacy_logits_bwd = legacy_model(test_inputs)
+        legacy_logits_bwd.sum().backward()
+
+    # Run backward pass with bridge model
+    bridge_model.zero_grad()
+    bridge_bwd_hooks = [
+        (name, make_backward_hook(bridge_grads, name)) for name in all_bwd_hooks_to_test
+    ]
+    with bridge_model.hooks(bwd_hooks=bridge_bwd_hooks):
+        bridge_logits_bwd = bridge_model(test_inputs)
+        bridge_logits_bwd.sum().backward()
+
+    # Get sets of hooks that were actually called (received gradients)
+    legacy_called_hooks = set(legacy_grads.keys())
+    bridge_called_hooks = set(bridge_grads.keys())
+
+    # Assert that the SAME hooks are called in both models
+    assert legacy_called_hooks == bridge_called_hooks, (
+        f"Backward hooks called differ between models!\n"
+        f"Only in legacy: {legacy_called_hooks - bridge_called_hooks}\n"
+        f"Only in bridge: {bridge_called_hooks - legacy_called_hooks}\n"
+        f"Legacy called: {sorted(legacy_called_hooks)}\n"
+        f"Bridge called: {sorted(bridge_called_hooks)}"
+    )
+
+    # For hooks that were called, verify gradients match
+    for hook_name in legacy_called_hooks:
+        assert torch.allclose(
+            legacy_grads[hook_name],
+            bridge_grads[hook_name],
+            atol=1e-2,
+            rtol=1e-2,
+        ), f"Gradient mismatch at {hook_name}"
 
     bridge_ctx = bridge_model.setup_attribution(test_inputs)  # type: ignore
     legacy_ctx = legacy_model.setup_attribution(test_inputs)  # type: ignore

@@ -177,7 +177,7 @@ class ReplacementModel(TransformerBridge):
                 block.ln1_post.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
             if hasattr(block, "ln2_post"):
                 block.ln2_post.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
-            self.ln_final.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
+        self.ln_final.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
 
         for name, param in self.named_parameters():
             # If I don't skip these, I get the following error:
