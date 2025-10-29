@@ -200,25 +200,37 @@ class ReplacementModel(TransformerBridge):
 
         def cache_activations(acts, hook):
             cached["acts"] = acts
+            # Clear the cached result from previous forward pass
+            cached.pop("result", None)
 
         def add_skip_connection(acts: torch.Tensor, hook: HookPoint, grad_hook: HookPoint):
-            if "acts" not in cached:
-                # there's a TLens bug that results in hooks getting called multiple times,
-                # this is a workaround to avoid the bug
-                # See the test: test_TransformerBridge_compatibility_mode_calls_hooks_multiple_times
+            # There's a TLens bug that results in hooks getting called multiple times in compatibility mode.
+            # To avoid calling grad_hook multiple times, we return the cached result on repeated calls.
+            # See test: test_TransformerBridge_compatibility_mode_calls_hooks_multiple_times
+
+            # If we've already computed the result for this forward pass due to the TLens bug, return it
+            if "result" in cached:
+                return cached["result"]
+
+            skip_input_activation = cached.get("acts")
+            if skip_input_activation is None:
+                # If cache is empty, just return acts unchanged (this shouldn't happen in normal operation)
                 warnings.warn(
                     "No activations cached for skip connection, this is likely due to a TLens bug."
                 )
                 return acts
+
             # We add grad_hook because we need a way to hook into the gradients of the output
             # of this function. If we put the backwards hook here at hook, the grads will be 0
             # because we detached acts.
-            skip_input_activation = cached.pop("acts")
             if hasattr(transcoder, "W_skip") and transcoder.W_skip is not None:
                 skip = transcoder.compute_skip(skip_input_activation)
             else:
                 skip = skip_input_activation * 0
-            return grad_hook(skip + (acts - skip).detach())
+
+            result = grad_hook(skip + (acts - skip).detach())
+            cached["result"] = result
+            return result
 
         # add feature input hook
         input_hook_parts = _rewrite_hook(self.feature_input_hook).split(".")
