@@ -200,12 +200,9 @@ def _run_attribution(
             input_ids.expand(batch_size, -1),
             fwd_hooks=[("ln_final.hook_in", _cache_ln_final_in_hook)],
         )
-        model.run_with_cache(input_ids.expand(batch_size, -1), names_filter="ln_final.hook_in")
         residual = cache["ln_final.hook_in"]
-        # something strange is happening here, where `residual` requires_grad
-        # but `model.ln_final(residual)` does not
-        # seemingly, calling model.ln_final._original_component(residual) works??
-        ctx._resid_activations[-1] = model.ln_final._original_component(residual)
+        # Call ln_final (not _original_component) to ensure hooks that stop gradients are applied
+        ctx._resid_activations[-1] = model.ln_final(residual)
     logger.info(f"Forward pass completed in {time.time() - phase_start:.2f}s")
 
     if offload:

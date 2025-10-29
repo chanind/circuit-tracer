@@ -165,14 +165,10 @@ class ReplacementModel(TransformerBridge):
         def stop_gradient(acts, hook):
             return acts.detach()
 
-        def zero_gradient_bwd(acts, hook):
-            return (torch.zeros_like(acts),)
-
         for block in self.blocks:
             block.attn.hook_pattern.add_hook(stop_gradient, is_permanent=True)  # type: ignore
             block.ln1.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
-            # need to use a bwd hook here because otherwise this kills all gradients in the MLP
-            block.ln2.hook_scale.add_hook(zero_gradient_bwd, dir="bwd", is_permanent=True)  # type: ignore
+            block.ln2.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
             if hasattr(block, "ln1_post"):
                 block.ln1_post.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
             if hasattr(block, "ln2_post"):
