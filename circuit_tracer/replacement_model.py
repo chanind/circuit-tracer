@@ -202,6 +202,14 @@ class ReplacementModel(TransformerBridge):
             cached["acts"] = acts
 
         def add_skip_connection(acts: torch.Tensor, hook: HookPoint, grad_hook: HookPoint):
+            if "acts" not in cached:
+                # there's a TLens bug that results in hooks getting called multiple times,
+                # this is a workaround to avoid the bug
+                # See the test: test_TransformerBridge_compatibility_mode_calls_hooks_multiple_times
+                warnings.warn(
+                    "No activations cached for skip connection, this is likely due to a TLens bug."
+                )
+                return acts
             # We add grad_hook because we need a way to hook into the gradients of the output
             # of this function. If we put the backwards hook here at hook, the grads will be 0
             # because we detached acts.
@@ -427,7 +435,7 @@ class ReplacementModel(TransformerBridge):
         error_vectors = mlp_out_cache - attribution_data["reconstruction"]
 
         error_vectors[:, 0] = 0
-        token_vectors = self.embed.W_E[tokens].detach()  # (n_pos, d_model)
+        token_vectors = self.embed.W_E[tokens].detach().squeeze(0)  # (n_pos, d_model)
 
         return AttributionContext(
             activation_matrix=attribution_data["activation_matrix"],

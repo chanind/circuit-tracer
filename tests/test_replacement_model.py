@@ -447,6 +447,7 @@ def test_bridge_attribute_behaves_like_legacy_attribute(
     )
     assert torch.allclose(bridge_graph.selected_features, legacy_graph.selected_features)
     assert bridge_graph.scan == legacy_graph.scan
+
     assert torch.allclose(
         bridge_graph.adjacency_matrix,
         legacy_graph.adjacency_matrix,
