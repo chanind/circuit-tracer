@@ -879,3 +879,144 @@ def _run_attribution_phase_3(
         row_to_node_index[i : i + batch.shape[0]] = (
             torch.arange(i, i + batch.shape[0]) + logit_offset
         )
+
+
+def test_TransformerBridge_gemma2_forward_fails():
+    """Minimal test demonstrating TransformerBridge bug with Gemma2.
+
+    This is a bug in TransformerLens where TransformerBridge fails to properly prepare
+    the position_embeddings argument when calling HuggingFace's Gemma2 attention forward.
+
+    Error: ValueError: not enough values to unpack (expected 2, got 1)
+    Location: transformers/models/gemma2/modeling_gemma2.py:248
+    Root Cause: TransformerLens is passing position_embeddings as a single value instead
+                of the expected tuple (cos, sin) that HuggingFace's Gemma2Attention requires.
+    """
+    from transformer_lens.config import TransformerBridgeConfig
+    from transformer_lens.factories.architecture_adapter_factory import ArchitectureAdapterFactory
+    from transformer_lens.model_bridge.sources.transformers import (
+        determine_architecture_from_hf_config,
+        map_default_transformer_lens_config,
+    )
+    from transformers import Gemma2Config, Gemma2ForCausalLM
+
+    # Create minimal Gemma2 config
+    gemma_cfg = Gemma2Config(
+        vocab_size=16,
+        hidden_size=8,
+        intermediate_size=16,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        head_dim=4,
+        hidden_act="gelu_pytorch_tanh",
+        max_position_embeddings=8192,
+        initializer_range=0.02,
+        rms_norm_eps=1e-6,
+        use_cache=True,
+        pad_token_id=0,
+        eos_token_id=1,
+        bos_token_id=2,
+        tie_word_embeddings=False,
+        rope_theta=10000.0,
+        attention_bias=False,
+        attention_dropout=0.0,
+        attn_logit_softcapping=50.0,
+        final_logit_softcapping=0.0,
+        sliding_window=4096,
+    )
+
+    # Create HF model and bridge
+    hf_model = Gemma2ForCausalLM(gemma_cfg)
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+
+    # Create TransformerBridge the same way ReplacementModel does
+    tl_config = map_default_transformer_lens_config(hf_model.config)
+    architecture = determine_architecture_from_hf_config(hf_model.config)
+    bridge_config = TransformerBridgeConfig.from_dict(tl_config.__dict__)
+    bridge_config.architecture = architecture
+    adapter = ArchitectureAdapterFactory.select_architecture_adapter(bridge_config)
+    bridge = TransformerBridge(model=hf_model, adapter=adapter, tokenizer=tokenizer)
+
+    # Simple forward pass triggers the bug
+    test_input = torch.tensor([[0, 1, 2, 3]])
+
+    # This will fail with: ValueError: not enough values to unpack (expected 2, got 1)
+    # at transformers/models/gemma2/modeling_gemma2.py:248
+    # when HuggingFace code tries to do: cos, sin = position_embeddings
+    # because TransformerLens incorrectly passes position_embeddings as a single value
+    bridge(test_input)
+
+
+def test_TransformerBridge_llama_rmsnorm_eps_fails():
+    """Minimal test demonstrating TransformerBridge bug with LlamaRMSNorm.
+
+    This is a bug in TransformerLens where NormalizationBridge tries to access
+    the 'eps' attribute on LlamaRMSNorm, but LlamaRMSNorm stores this value as
+    'variance_epsilon' instead.
+
+    Error: AttributeError: 'LlamaRMSNorm' object has no attribute 'eps'
+    Location: transformer_lens/model_bridge/generalized_components/normalization.py:121
+    Root Cause: TransformerLens assumes normalization layers have an 'eps' attribute,
+                but LlamaRMSNorm uses 'variance_epsilon'.
+
+    The fix in TransformerLens should check for both 'eps' and 'variance_epsilon':
+        eps = getattr(self.original_component, 'eps',
+                     getattr(self.original_component, 'variance_epsilon', 1e-5))
+
+    Note: This test currently fails with the position_embeddings bug first (in attention),
+    but the eps bug is encountered when using Llama models with attribution/gradient hooks
+    (see test_attributions_llama.py). Both bugs need to be fixed.
+    """
+    from transformer_lens.config import TransformerBridgeConfig
+    from transformer_lens.factories.architecture_adapter_factory import ArchitectureAdapterFactory
+    from transformer_lens.model_bridge.sources.transformers import (
+        determine_architecture_from_hf_config,
+        map_default_transformer_lens_config,
+    )
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    # Create minimal Llama config
+    llama_cfg = LlamaConfig(
+        vocab_size=16,
+        hidden_size=8,
+        intermediate_size=16,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        hidden_act="silu",
+        max_position_embeddings=2048,
+        initializer_range=0.017677669529663688,
+        rms_norm_eps=1e-5,
+        use_cache=True,
+        pad_token_id=None,
+        bos_token_id=1,
+        eos_token_id=2,
+        tie_word_embeddings=False,
+    )
+
+    # Create HF model and TransformerBridge
+    hf_model = LlamaForCausalLM(llama_cfg)
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+
+    # Create TransformerBridge using TransformerLens APIs
+    tl_config = map_default_transformer_lens_config(hf_model.config)
+    architecture = determine_architecture_from_hf_config(hf_model.config)
+    bridge_config = TransformerBridgeConfig.from_dict(tl_config.__dict__)
+    bridge_config.architecture = architecture
+    adapter = ArchitectureAdapterFactory.select_architecture_adapter(bridge_config)
+    bridge = TransformerBridge(model=hf_model, adapter=adapter, tokenizer=tokenizer)
+
+    # Simple forward pass triggers the bugs
+    test_input = torch.tensor([[0, 1, 2, 3]])
+
+    # This will currently fail with the position_embeddings bug first:
+    #   ValueError: not enough values to unpack (expected 2, got 1)
+    #   at transformers/models/llama/modeling_llama.py:240
+    #
+    # But the eps bug also exists and would be hit in the normalization layer:
+    #   AttributeError: 'LlamaRMSNorm' object has no attribute 'eps'
+    #   at transformer_lens/model_bridge/generalized_components/normalization.py:121
+    #
+    # The eps bug is reliably encountered in test_attributions_llama.py
+    bridge(test_input)
