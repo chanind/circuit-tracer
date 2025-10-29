@@ -533,6 +533,128 @@ def test_bridge_context_compute_batch_behaves_like_legacy_context_compute_batch(
         assert torch.allclose(bridge_feature_rows, legacy_feature_rows, atol=1e-2, rtol=1e-2)
 
 
+def test_bridge_feature_intervention_with_frozen_attention_behaves_like_legacy(
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    """Test basic feature intervention with frozen attention (default behavior)."""
+    bridge_model, legacy_model = replacement_model_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]]).squeeze(0)
+    interventions: list[tuple[int, int, int, torch.Tensor]] = [
+        (0, 1, 5, torch.tensor(2.0)),  # layer 0, position 1, feature 5, value 2.0
+        (1, 2, 10, torch.tensor(1.5)),  # layer 1, position 2, feature 10, value 1.5
+        (2, 3, 7, torch.tensor(3.0)),  # layer 2, position 3, feature 7, value 3.0
+    ]
+
+    bridge_logits, bridge_acts = bridge_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        freeze_attention=True,
+    )
+    legacy_logits, legacy_acts = legacy_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        freeze_attention=True,
+    )
+
+    assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
+        f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
+    )
+    assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
+        f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
+    )
+
+
+def test_bridge_feature_intervention_without_frozen_attention_behaves_like_legacy(
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    """Test feature intervention without frozen attention (iterative patching - effects propagate)."""
+    bridge_model, legacy_model = replacement_model_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]]).squeeze(0)
+    interventions: list[tuple[int, int, int, torch.Tensor]] = [
+        (0, 1, 5, torch.tensor(2.0)),
+        (1, 2, 10, torch.tensor(1.5)),
+        (2, 3, 7, torch.tensor(3.0)),
+    ]
+
+    bridge_logits, bridge_acts = bridge_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        freeze_attention=False,
+    )
+    legacy_logits, legacy_acts = legacy_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        freeze_attention=False,
+    )
+
+    assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
+        f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
+    )
+    assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
+        f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
+    )
+
+
+def test_bridge_feature_intervention_with_constrained_layers_behaves_like_legacy(
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    """Test feature intervention with constrained layers (direct effects - no propagation through transcoders)."""
+    bridge_model, legacy_model = replacement_model_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]]).squeeze(0)
+    interventions: list[tuple[int, int, int, torch.Tensor]] = [
+        (0, 1, 5, torch.tensor(2.0)),
+        (1, 2, 10, torch.tensor(1.5)),
+        (2, 3, 7, torch.tensor(3.0)),
+    ]
+    constrained_layers = range(0, 6)
+
+    bridge_logits, bridge_acts = bridge_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        constrained_layers=constrained_layers,
+        freeze_attention=True,
+    )
+    legacy_logits, legacy_acts = legacy_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        constrained_layers=constrained_layers,
+        freeze_attention=True,
+    )
+
+    assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
+        f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
+    )
+    assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
+        f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
+    )
+
+
+def test_bridge_feature_intervention_empty_interventions_behaves_like_legacy(
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    """Test empty intervention list (baseline - should just run the model normally with frozen attention)."""
+    bridge_model, legacy_model = replacement_model_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]]).squeeze(0)
+
+    bridge_logits, bridge_acts = bridge_model.feature_intervention(
+        prompt, [], freeze_attention=True
+    )
+    legacy_logits, legacy_acts = legacy_model.feature_intervention(
+        prompt, [], freeze_attention=True
+    )
+
+    assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
+        f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
+    )
+    assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
+        f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
+    )
+
+
 def test_bridge_attribute_behaves_like_legacy_attribute(
     replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
 ):
@@ -717,7 +839,7 @@ def test_TransformerBridge_gpt2_behaves_like_HookedTransformer_gpt2():
         )
 
 
-# --- copied code chunks from attribute since these are not in separate functions and hard to test in isolation ---
+# --- copied code chunks from attribute since these are not in separate functions and hard to test in isolation --- #
 
 
 def _legacy_attribute_phase_1(
@@ -879,6 +1001,9 @@ def _run_attribution_phase_3(
         row_to_node_index[i : i + batch.shape[0]] = (
             torch.arange(i, i + batch.shape[0]) + logit_offset
         )
+
+
+# ------------------------------------------------------------ #
 
 
 def test_TransformerBridge_gemma2_forward_fails():
