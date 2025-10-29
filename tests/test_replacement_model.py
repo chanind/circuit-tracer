@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+from typing import NamedTuple
+
 import pytest
 import torch
 import torch.nn.functional as F
@@ -5,10 +8,15 @@ from transformer_lens import HookedTransformer
 from transformer_lens.model_bridge import TransformerBridge
 from transformers import AutoTokenizer, GPT2LMHeadModel
 
-from circuit_tracer.attribution.attribute import attribute
+from circuit_tracer.attribution.attribute import (
+    attribute,
+    compute_salient_logits,
+)
+from circuit_tracer.attribution.context import AttributionContext
 from circuit_tracer.replacement_model import ReplacementModel
 from circuit_tracer.transcoder.single_layer_transcoder import SingleLayerTranscoder, TranscoderSet
 from tests._comparison.attribution.attribute import attribute as legacy_attribute
+from tests._comparison.attribution.context import AttributionContext as LegacyAttributionContext
 from tests._comparison.replacement_model import ReplacementModel as LegacyReplacementModel
 
 
@@ -587,6 +595,101 @@ def test_bridge_setup_attribution_behaves_like_legacy_setup_attribution(
     )
 
 
+def test_bridge_attribute_phase_1_behaves_like_legacy_attribute_phase_1(
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    bridge_model, legacy_model = replacement_model_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]])
+    bridge_ctx = bridge_model.setup_attribution(prompt)  # type: ignore
+    legacy_ctx = legacy_model.setup_attribution(prompt)  # type: ignore
+    _run_attribution_phase_1(bridge_ctx, bridge_model, prompt, 32)
+    _legacy_attribute_phase_1(legacy_ctx, legacy_model, prompt, 32)
+    assert bridge_ctx._resid_activations[-1] is not None
+    assert legacy_ctx._resid_activations[-1] is not None
+    assert torch.allclose(
+        bridge_ctx._resid_activations[-1], legacy_ctx._resid_activations[-1], atol=1e-2, rtol=1e-2
+    )
+
+
+def test_bridge_attribute_phase_2_behaves_like_legacy_attribute_phase_2(
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    bridge_model, legacy_model = replacement_model_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]])
+    bridge_ctx = bridge_model.setup_attribution(prompt)  # type: ignore
+    legacy_ctx = legacy_model.setup_attribution(prompt)  # type: ignore
+    _run_attribution_phase_1(bridge_ctx, bridge_model, prompt, 32)
+    _legacy_attribute_phase_1(legacy_ctx, legacy_model, prompt, 32)
+
+    bridge_phase_2_output = _bridge_attribute_phase_2(bridge_ctx, bridge_model)
+    legacy_phase_2_output = _legacy_attribute_phase_2(legacy_ctx, legacy_model)
+
+    assert torch.allclose(
+        bridge_phase_2_output.edge_matrix, legacy_phase_2_output.edge_matrix, atol=1e-2, rtol=1e-2
+    )
+    assert torch.allclose(
+        bridge_phase_2_output.row_to_node_index,
+        legacy_phase_2_output.row_to_node_index,
+        atol=1e-2,
+        rtol=1e-2,
+    )
+    assert torch.allclose(
+        bridge_phase_2_output.logit_idx, legacy_phase_2_output.logit_idx, atol=1e-2, rtol=1e-2
+    )
+    assert torch.allclose(
+        bridge_phase_2_output.logit_p, legacy_phase_2_output.logit_p, atol=1e-2, rtol=1e-2
+    )
+    assert torch.allclose(
+        bridge_phase_2_output.logit_vecs, legacy_phase_2_output.logit_vecs, atol=1e-2, rtol=1e-2
+    )
+
+
+def test_bridge_attribute_phase_3_behaves_like_legacy_attribute_phase_3(
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    bridge_model, legacy_model = replacement_model_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]])
+    bridge_ctx = bridge_model.setup_attribution(prompt)  # type: ignore
+    legacy_ctx = legacy_model.setup_attribution(prompt)  # type: ignore
+    _run_attribution_phase_1(bridge_ctx, bridge_model, prompt, 32)
+    _legacy_attribute_phase_1(legacy_ctx, legacy_model, prompt, 32)
+    bridge_phase_2_output = _bridge_attribute_phase_2(bridge_ctx, bridge_model)
+    legacy_phase_2_output = _legacy_attribute_phase_2(legacy_ctx, legacy_model)
+
+    _run_attribution_phase_3(
+        ctx=bridge_ctx,
+        logit_idx=bridge_phase_2_output.logit_idx,
+        logit_vecs=bridge_phase_2_output.logit_vecs,
+        batch_size=32,
+        edge_matrix=bridge_phase_2_output.edge_matrix,
+        row_to_node_index=bridge_phase_2_output.row_to_node_index,
+        logit_offset=bridge_phase_2_output.logit_offset,
+    )
+    _run_attribution_phase_3(
+        ctx=legacy_ctx,
+        logit_idx=legacy_phase_2_output.logit_idx,
+        logit_vecs=legacy_phase_2_output.logit_vecs,
+        batch_size=32,
+        edge_matrix=legacy_phase_2_output.edge_matrix,
+        row_to_node_index=legacy_phase_2_output.row_to_node_index,
+        logit_offset=legacy_phase_2_output.logit_offset,
+    )
+
+    # phase 3 modifies the phase 2 outputs in-place
+    assert torch.allclose(
+        bridge_phase_2_output.edge_matrix, legacy_phase_2_output.edge_matrix, atol=1e-2, rtol=1e-2
+    )
+    assert torch.allclose(
+        bridge_phase_2_output.row_to_node_index,
+        legacy_phase_2_output.row_to_node_index,
+        atol=1e-2,
+        rtol=1e-2,
+    )
+
+
 def test_TransformerBridge_gpt2_behaves_like_HookedTransformer_gpt2():
     """
     This isn't actually a test of the ReplacementModel, but if this fails, we have no hope.
@@ -607,4 +710,171 @@ def test_TransformerBridge_gpt2_behaves_like_HookedTransformer_gpt2():
             bridge_cache[f"blocks.{layer}.hook_resid_mid"],
             atol=1e-2,
             rtol=1e-2,
+        )
+
+
+# --- copied code chunks from attribute since these are not in separate functions and hard to test in isolation ---
+
+
+def _legacy_attribute_phase_1(
+    ctx: LegacyAttributionContext,
+    model: LegacyReplacementModel,
+    input_ids: torch.Tensor,
+    batch_size: int,
+):
+    with ctx.install_hooks(model):
+        residual = model.forward(input_ids.expand(batch_size, -1), stop_at_layer=model.cfg.n_layers)  # type: ignore
+        ctx._resid_activations[-1] = model.ln_final(residual)
+
+
+@dataclass
+class Phase2Output:
+    edge_matrix: torch.Tensor
+    row_to_node_index: torch.Tensor
+    logit_idx: torch.Tensor
+    logit_p: torch.Tensor
+    logit_vecs: torch.Tensor
+    total_nodes: int
+    n_logits: int
+    logit_offset: int
+
+
+def _bridge_attribute_phase_2(ctx: AttributionContext, model: ReplacementModel) -> Phase2Output:
+    feat_layers, feat_pos, _ = ctx.activation_matrix.indices()
+    n_layers, n_pos, _ = ctx.activation_matrix.shape
+    logit_offset = len(feat_layers) + (n_layers + 1) * n_pos
+
+    logit_idx, logit_p, logit_vecs = compute_salient_logits(
+        ctx.logits[0, -1],
+        model.unembed.W_U,
+        max_n_logits=10,
+        desired_logit_prob=0.95,
+    )
+    n_logits = len(logit_idx)
+
+    edge_matrix, row_to_node_index = _build_input_vectors(
+        ctx, n_logits, logit_offset, max_feature_nodes=None
+    )
+
+    return Phase2Output(
+        edge_matrix=edge_matrix,
+        row_to_node_index=row_to_node_index,
+        logit_idx=logit_idx,
+        logit_p=logit_p,
+        logit_vecs=logit_vecs,
+        total_nodes=logit_offset + n_logits,
+        n_logits=n_logits,
+        logit_offset=logit_offset,
+    )
+
+
+def _legacy_attribute_phase_2(
+    ctx: LegacyAttributionContext, model: LegacyReplacementModel
+) -> Phase2Output:
+    activation_matrix = ctx.activation_matrix
+    feat_layers, feat_pos, _ = activation_matrix.indices()
+    n_layers, n_pos, _ = activation_matrix.shape
+    total_active_feats = activation_matrix._nnz()
+    max_feature_nodes = None
+
+    logit_idx, logit_p, logit_vecs = compute_salient_logits(
+        ctx.logits[0, -1],
+        model.unembed.W_U,  # type: ignore
+        max_n_logits=10,
+        desired_logit_prob=0.95,
+    )
+
+    logit_offset = len(feat_layers) + (n_layers + 1) * n_pos
+    n_logits = len(logit_idx)
+    total_nodes = logit_offset + n_logits
+
+    max_feature_nodes = min(max_feature_nodes or total_active_feats, total_active_feats)
+
+    edge_matrix = torch.zeros(max_feature_nodes + n_logits, total_nodes)
+    # Maps row indices in edge_matrix to original feature/node indices
+    # First populated with logit node IDs, then feature IDs in attribution order
+    row_to_node_index = torch.zeros(max_feature_nodes + n_logits, dtype=torch.int32)
+
+    return Phase2Output(
+        edge_matrix=edge_matrix,
+        row_to_node_index=row_to_node_index,
+        logit_idx=logit_idx,
+        logit_p=logit_p,
+        logit_vecs=logit_vecs,
+        total_nodes=total_nodes,
+        n_logits=n_logits,
+        logit_offset=logit_offset,
+    )
+
+
+# Phase 1: forward pass
+def _run_attribution_phase_1(
+    ctx: AttributionContext,
+    model: ReplacementModel,
+    input_ids: torch.Tensor,
+    batch_size: int,
+):
+    with ctx.install_hooks(model):
+        cache = {}
+
+        def _cache_ln_final_in_hook(acts, hook):
+            cache["ln_final.hook_in"] = acts
+
+        model.run_with_hooks(
+            input_ids.expand(batch_size, -1),
+            fwd_hooks=[("ln_final.hook_in", _cache_ln_final_in_hook)],
+        )
+        model.run_with_cache(input_ids.expand(batch_size, -1), names_filter="ln_final.hook_in")
+        residual = cache["ln_final.hook_in"]
+        # something strange is happening here, where `residual` requires_grad
+        # but `model.ln_final(residual)` does not
+        # seemingly, calling model.ln_final._original_component(residual) works??
+        ctx._resid_activations[-1] = model.ln_final._original_component(residual)  # type: ignore
+
+
+class BuiltInputVectorsOutput(NamedTuple):
+    edge_matrix: torch.Tensor
+    row_to_node_index: torch.Tensor
+
+
+def _build_input_vectors(
+    ctx: AttributionContext,
+    n_logits: int,
+    logit_offset: int,
+    max_feature_nodes: int | None = None,
+) -> BuiltInputVectorsOutput:
+    total_active_feats = ctx.activation_matrix._nnz()
+    total_nodes = logit_offset + n_logits
+    max_feature_nodes = min(max_feature_nodes or total_active_feats, total_active_feats)
+    edge_matrix = torch.zeros(max_feature_nodes + n_logits, total_nodes)
+    # Maps row indices in edge_matrix to original feature/node indices
+    # First populated with logit node IDs, then feature IDs in attribution order
+    row_to_node_index = torch.zeros(max_feature_nodes + n_logits, dtype=torch.int32)
+    return BuiltInputVectorsOutput(
+        edge_matrix=edge_matrix,
+        row_to_node_index=row_to_node_index,
+    )
+
+
+# logic is identical for both legacy and bridge here
+def _run_attribution_phase_3(
+    ctx: AttributionContext | LegacyAttributionContext,
+    logit_idx: torch.Tensor,
+    logit_vecs: torch.Tensor,
+    batch_size: int,
+    edge_matrix: torch.Tensor,
+    row_to_node_index: torch.Tensor,
+    logit_offset: int,
+):
+    n_layers, n_pos, _ = ctx.activation_matrix.shape
+    for i in range(0, len(logit_idx), batch_size):
+        batch = logit_vecs[i : i + batch_size]
+        rows = ctx.compute_batch(
+            layers=torch.full((batch.shape[0],), n_layers),
+            positions=torch.full((batch.shape[0],), n_pos - 1),
+            inject_values=batch,
+        )
+        edge_matrix[i : i + batch.shape[0], :logit_offset] = rows.cpu()
+        row_to_node_index[i : i + batch.shape[0]] = (
+            torch.arange(i, i + batch.shape[0]) + logit_offset
         )
