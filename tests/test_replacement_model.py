@@ -14,6 +14,7 @@ from circuit_tracer.attribution.attribute import (
 )
 from circuit_tracer.attribution.context import AttributionContext
 from circuit_tracer.replacement_model import ReplacementModel
+from circuit_tracer.transcoder.cross_layer_transcoder import CrossLayerTranscoder
 from circuit_tracer.transcoder.single_layer_transcoder import SingleLayerTranscoder, TranscoderSet
 from tests._comparison.attribution.attribute import attribute as legacy_attribute
 from tests._comparison.attribution.context import AttributionContext as LegacyAttributionContext
@@ -61,6 +62,46 @@ def replacement_model_pair(
     )
     bridge_model = ReplacementModel.from_hf_model(
         hf_model, hf_tokenizer, gpt2_transcoder_set_pair[1], device=torch.device("cpu")
+    )
+    return (bridge_model, legacy_model)
+
+
+@pytest.fixture
+def replacement_model_clt_pair() -> tuple[ReplacementModel, LegacyReplacementModel]:
+    """Create a pair of models (bridge and legacy) with matching CLT weights for testing."""
+    # Create CLT with random weights
+    n_layers = 12
+    d_model = 768
+    d_transcoder = 128  # Small for faster testing
+
+    clt1 = CrossLayerTranscoder(
+        n_layers=n_layers,
+        d_transcoder=d_transcoder,
+        d_model=d_model,
+        dtype=torch.float32,
+        lazy_decoder=False,
+    )
+    clt2 = CrossLayerTranscoder(
+        n_layers=n_layers,
+        d_transcoder=d_transcoder,
+        d_model=d_model,
+        dtype=torch.float32,
+        lazy_decoder=False,
+    )
+
+    # Share weights between the two CLTs
+    with torch.no_grad():
+        for param1, param2 in zip(clt1.parameters(), clt2.parameters()):
+            assert param1.shape == param2.shape
+            data = torch.randn_like(param1)
+            param1.data = data
+            param2.data = data
+
+    hf_model = GPT2LMHeadModel.from_pretrained("gpt2", device_map="cpu")
+    hf_tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    legacy_model = LegacyReplacementModel.from_pretrained_and_transcoders("gpt2", clt1, device="cpu")
+    bridge_model = ReplacementModel.from_hf_model(
+        hf_model, hf_tokenizer, clt2, device=torch.device("cpu")
     )
     return (bridge_model, legacy_model)
 
@@ -637,6 +678,137 @@ def test_bridge_feature_intervention_empty_interventions_behaves_like_legacy(
 ):
     """Test empty intervention list (baseline - should just run the model normally with frozen attention)."""
     bridge_model, legacy_model = replacement_model_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]]).squeeze(0)
+
+    bridge_logits, bridge_acts = bridge_model.feature_intervention(
+        prompt, [], freeze_attention=True
+    )
+    legacy_logits, legacy_acts = legacy_model.feature_intervention(
+        prompt, [], freeze_attention=True
+    )
+
+    assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
+        f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
+    )
+    assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
+        f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
+    )
+
+
+# ============================================================================
+# CLT (Cross-Layer Transcoder) Feature Intervention Tests
+# ============================================================================
+
+
+def test_bridge_clt_feature_intervention_with_frozen_attention_behaves_like_legacy(
+    replacement_model_clt_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    """Test CLT feature intervention with frozen attention (default behavior)."""
+    bridge_model, legacy_model = replacement_model_clt_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]]).squeeze(0)
+    interventions: list[tuple[int, int, int, torch.Tensor]] = [
+        (0, 1, 5, torch.tensor(2.0)),  # layer 0, position 1, feature 5, value 2.0
+        (1, 2, 10, torch.tensor(1.5)),  # layer 1, position 2, feature 10, value 1.5
+        (2, 3, 7, torch.tensor(3.0)),  # layer 2, position 3, feature 7, value 3.0
+    ]
+
+    bridge_logits, bridge_acts = bridge_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        freeze_attention=True,
+    )
+    legacy_logits, legacy_acts = legacy_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        freeze_attention=True,
+    )
+
+    # Verify logits match between bridge and legacy for CLT intervention with frozen attention
+    assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
+        f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
+    )
+
+    # Verify activation caches match
+    assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
+        f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
+    )
+
+
+def test_bridge_clt_feature_intervention_without_frozen_attention_behaves_like_legacy(
+    replacement_model_clt_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    """Test CLT feature intervention without frozen attention (iterative patching - effects propagate)."""
+    bridge_model, legacy_model = replacement_model_clt_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]]).squeeze(0)
+    interventions: list[tuple[int, int, int, torch.Tensor]] = [
+        (0, 1, 5, torch.tensor(2.0)),
+        (1, 2, 10, torch.tensor(1.5)),
+        (2, 3, 7, torch.tensor(3.0)),
+    ]
+
+    bridge_logits, bridge_acts = bridge_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        freeze_attention=False,
+    )
+    legacy_logits, legacy_acts = legacy_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        freeze_attention=False,
+    )
+
+    assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
+        f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
+    )
+    assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
+        f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
+    )
+
+
+def test_bridge_clt_feature_intervention_with_constrained_layers_behaves_like_legacy(
+    replacement_model_clt_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    """Test CLT feature intervention with constrained layers (direct effects - CLT writes only to constrained layers)."""
+    bridge_model, legacy_model = replacement_model_clt_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]]).squeeze(0)
+    interventions: list[tuple[int, int, int, torch.Tensor]] = [
+        (0, 1, 5, torch.tensor(2.0)),
+        (1, 2, 10, torch.tensor(1.5)),
+        (2, 3, 7, torch.tensor(3.0)),
+    ]
+    # Constrain to layers 0-5 (CLT will write only to these layers)
+    constrained_layers = range(0, 6)
+
+    bridge_logits, bridge_acts = bridge_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        constrained_layers=constrained_layers,
+        freeze_attention=True,
+    )
+    legacy_logits, legacy_acts = legacy_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        constrained_layers=constrained_layers,
+        freeze_attention=True,
+    )
+
+    assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
+        f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
+    )
+    assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
+        f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
+    )
+
+
+def test_bridge_clt_feature_intervention_empty_interventions_behaves_like_legacy(
+    replacement_model_clt_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    """Test CLT with empty intervention list (baseline - should just run the model normally with frozen attention)."""
+    bridge_model, legacy_model = replacement_model_clt_pair
 
     prompt = torch.tensor([[0, 1, 2, 3, 4, 5]]).squeeze(0)
 
