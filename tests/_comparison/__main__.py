@@ -217,7 +217,7 @@ def run_attribution(args, parser):
     if not args.model:
         parser.error("--model must be specified when not provided in transcoder config")
 
-    model_instance = ReplacementModel.from_pretrained_and_transcoders(
+    model_instance = ReplacementModel.from_pretrained_and_transcoders(  # type: ignore
         args.model, transcoder, dtype=dtype
     )
 

@@ -312,7 +312,7 @@ def test_TransformerBridge_compatibility_mode_calls_hooks_multiple_times():
         hooked_call_count += 1
         return acts
 
-    hooked_model.blocks[0].hook_mlp_out.add_hook(count_hooked_calls, is_permanent=True)
+    hooked_model.blocks[0].hook_mlp_out.add_hook(count_hooked_calls, is_permanent=True)  # type: ignore
     _ = hooked_model(test_input)
     hooked_model.reset_hooks()
 
@@ -366,7 +366,7 @@ def test_bridge_context_compute_batch_behaves_like_legacy_context_compute_batch(
             fwd_hooks=[("ln_final.hook_in", _cache_ln_final_in_hook)],
         )
         residual = cache["ln_final.hook_in"]
-        bridge_ctx._resid_activations[-1] = bridge_model.ln_final._original_component(residual)
+        bridge_ctx._resid_activations[-1] = bridge_model.ln_final._original_component(residual)  # type: ignore
 
     with legacy_ctx.install_hooks(legacy_model):
         legacy_model.run_with_cache(test_inputs.expand(32, -1), names_filter="ln_final.hook_in")  # type: ignore
