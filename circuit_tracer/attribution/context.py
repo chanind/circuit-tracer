@@ -109,7 +109,9 @@ class AttributionContext:
         # while hooks are still registered (which can happen due to TransformerBridge bugs).
 
         def _hook_fn(grads: torch.Tensor, hook: HookPoint) -> None:
-            assert self._batch_buffer is not None, "Batch buffer must be initialized before hook is called"
+            assert self._batch_buffer is not None, (
+                "Batch buffer must be initialized before hook is called"
+            )
             self._batch_buffer[write_index] += einsum(
                 grads.to(output_vecs.dtype)[read_index],
                 output_vecs,
