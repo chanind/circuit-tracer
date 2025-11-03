@@ -698,6 +698,47 @@ def test_bridge_feature_intervention_empty_interventions_behaves_like_legacy(
     )
 
 
+def test_bridge_feature_intervention_with_constrained_layers_and_no_activation_function_behaves_like_legacy(
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    """Test feature intervention with constrained layers and apply_activation_function=False.
+
+    This tests the case where interventions are constrained to specific layers and
+    the transcoder activation function is not applied during intervention.
+    """
+    bridge_model, legacy_model = replacement_model_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]]).squeeze(0)
+    interventions: list[tuple[int, int, int, torch.Tensor]] = [
+        (0, 1, 5, torch.tensor(2.0)),
+        (1, 2, 10, torch.tensor(1.5)),
+        (2, 3, 7, torch.tensor(3.0)),
+    ]
+    constrained_layers = range(0, 6)
+
+    bridge_logits, bridge_acts = bridge_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        constrained_layers=constrained_layers,
+        freeze_attention=True,
+        apply_activation_function=False,
+    )
+    legacy_logits, legacy_acts = legacy_model.feature_intervention(
+        prompt,
+        interventions,  # type: ignore
+        constrained_layers=constrained_layers,
+        freeze_attention=True,
+        apply_activation_function=False,
+    )
+
+    assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
+        f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
+    )
+    assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
+        f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
+    )
+
+
 # ============================================================================
 # CLT (Cross-Layer Transcoder) Feature Intervention Tests
 # ============================================================================
