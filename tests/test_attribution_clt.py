@@ -212,5 +212,81 @@ def create_legacy_clt_model(cfg: HookedTransformerConfig):
     return model
 
 
+def test_clt_attribution_bridge_vs_legacy_on_gpt2():
+    """Test CLT attribution comparing bridge vs legacy on real GPT-2 with identical CLTs."""
+
+    # Create two identical CLTs
+    n_layers = 12
+    d_model = 768
+    d_transcoder = 128  # Small for faster testing
+
+    clt1 = CrossLayerTranscoder(
+        n_layers=n_layers,
+        d_transcoder=d_transcoder,
+        d_model=d_model,
+        dtype=torch.float32,
+        lazy_decoder=False,
+    )
+    clt2 = CrossLayerTranscoder(
+        n_layers=n_layers,
+        d_transcoder=d_transcoder,
+        d_model=d_model,
+        dtype=torch.float32,
+        lazy_decoder=False,
+    )
+
+    # Share weights between the two CLTs
+    with torch.no_grad():
+        for param1, param2 in zip(clt1.parameters(), clt2.parameters()):
+            assert param1.shape == param2.shape
+            data = torch.randn_like(param1)
+            param1.data = data.clone()
+            param2.data = data.clone()
+
+    # Create bridge model (new implementation)
+    hf_model = GPT2LMHeadModel.from_pretrained("gpt2", device_map="cpu")
+    hf_tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    bridge_model = ReplacementModel.from_hf_model(
+        hf_model, hf_tokenizer, clt2, device=torch.device("cpu")
+    )
+
+    # Create legacy model (old implementation)
+    legacy_model = LegacyReplacementModel.from_pretrained_and_transcoders(
+        "gpt2", clt1, device="cpu"
+    )
+
+    # Test with a simple prompt
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]])
+
+    # Run attribution on both
+    bridge_graph = attribute(
+        prompt, bridge_model, max_n_logits=5, desired_logit_prob=0.8, batch_size=32
+    )
+    legacy_graph = legacy_attribute(
+        prompt, legacy_model, max_n_logits=5, desired_logit_prob=0.8, batch_size=32
+    )
+
+    # Check if active features match
+    assert torch.allclose(bridge_graph.active_features, legacy_graph.active_features), (
+        "Active features differ!"
+    )
+
+    # Check if activation values match
+    assert torch.allclose(
+        bridge_graph.activation_values, legacy_graph.activation_values, atol=1e-2, rtol=1e-2
+    ), "Activation values differ!"
+
+    # Check if adjacency matrices match
+    diff = (bridge_graph.adjacency_matrix - legacy_graph.adjacency_matrix).abs()
+    max_diff = diff.max()
+    mean_diff = diff.mean()
+
+    # Allow for numerical precision differences due to different computation paths
+    # Max relative diff is ~4.6% on small values, max absolute diff is ~0.64
+    assert torch.allclose(
+        bridge_graph.adjacency_matrix, legacy_graph.adjacency_matrix, atol=0.05, rtol=0.05
+    ), f"Adjacency matrices differ! Max diff: {max_diff:.6e}, Mean diff: {mean_diff:.6e}"
+
+
 if __name__ == "__main__":
     test_clt_attribution()
