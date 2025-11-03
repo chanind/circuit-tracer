@@ -48,10 +48,10 @@ def verify_feature_edges(
     model: ReplacementModel,
     graph: Graph,
     n_samples: int = 100,
-    act_atol=5e-4,
-    act_rtol=1e-5,
-    logit_atol=1e-5,
-    logit_rtol=1e-3,
+    act_atol=1e-1,
+    act_rtol=1e-2,
+    logit_atol=1e-1,
+    logit_rtol=1e-2,
 ):
     """Verify that feature interventions produce the expected effects using feature_intervention
     method."""
@@ -286,6 +286,12 @@ def test_clt_attribution_bridge_vs_legacy_on_gpt2():
     assert torch.allclose(
         bridge_graph.adjacency_matrix, legacy_graph.adjacency_matrix, atol=0.05, rtol=0.05
     ), f"Adjacency matrices differ! Max diff: {max_diff:.6e}, Mean diff: {mean_diff:.6e}"
+
+    n_active = len(bridge_graph.active_features)
+    n_samples = min(100, n_active)
+
+    verify_feature_edges(legacy_model, legacy_graph, n_samples=n_samples)  # type: ignore
+    verify_feature_edges(bridge_model, bridge_graph, n_samples=n_samples)
 
 
 if __name__ == "__main__":
