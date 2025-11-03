@@ -1,11 +1,14 @@
 import torch
 import torch.nn as nn
 from tqdm import tqdm
+from transformer_lens import HookedTransformerConfig
 from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 
 from circuit_tracer import Graph, ReplacementModel, attribute
 from circuit_tracer.transcoder.cross_layer_transcoder import CrossLayerTranscoder
 from circuit_tracer.utils import get_default_device
+from tests._comparison.attribution.attribute import attribute as legacy_attribute
+from tests._comparison.replacement_model import ReplacementModel as LegacyReplacementModel
 
 
 def create_clt_model(cfg: GPT2Config):
@@ -140,6 +143,73 @@ def test_clt_attribution():
     n_samples = min(100, n_active)
 
     verify_feature_edges(model, graph, n_samples=n_samples)
+
+
+# -- verify that legacy code did work -- #
+
+
+def test_clt_attribution_legacy():
+    """Test CLT attribution and intervention mechanism."""
+    # Minimal config
+    cfg = HookedTransformerConfig.from_dict(
+        {
+            "n_layers": 4,
+            "d_model": 8,
+            "n_ctx": 32,
+            "d_head": 4,
+            "n_heads": 2,
+            "d_mlp": 32,
+            "act_fn": "gelu",
+            "d_vocab": 50,
+            "model_name": "test-clt",
+            "device": get_default_device(),
+            "tokenizer_name": "gpt2",
+        }
+    )
+
+    # Create model
+    model = create_legacy_clt_model(cfg)
+
+    # Run attribution
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]])
+    graph = legacy_attribute(prompt, model, max_n_logits=5, desired_logit_prob=0.8, batch_size=32)
+
+    # Test feature interventions
+    n_active = len(graph.active_features)
+    n_samples = min(100, n_active)
+
+    verify_feature_edges(model, graph, n_samples=n_samples)  # type: ignore
+
+
+def create_legacy_clt_model(cfg: HookedTransformerConfig):
+    """Create a CLT and ReplacementModel with random weights."""
+    # Create CLT with 4x expansion
+    clt = CrossLayerTranscoder(
+        n_layers=cfg.n_layers,
+        d_transcoder=cfg.d_model * 4,
+        d_model=cfg.d_model,
+        dtype=cfg.dtype,
+        lazy_decoder=False,
+    )
+
+    # Initialize CLT weights
+    with torch.no_grad():
+        for param in clt.parameters():
+            nn.init.uniform_(param, a=-0.1, b=0.1)
+
+    # Create model
+    model = LegacyReplacementModel.from_config(cfg, clt)
+
+    # Monkey patch all_special_ids if necessary
+    type(model.tokenizer).all_special_ids = property(lambda self: [0])  # type: ignore
+
+    # Initialize model weights
+    with torch.no_grad():
+        for param in model.parameters():
+            if param.requires_grad:
+                nn.init.uniform_(param, a=-0.1, b=0.1)
+
+    return model
 
 
 if __name__ == "__main__":

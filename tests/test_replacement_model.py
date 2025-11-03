@@ -30,8 +30,8 @@ def gpt2_transcoder_set_pair() -> tuple[TranscoderSet, TranscoderSet]:
         for param1, param2 in zip(transcoder_set1.parameters(), transcoder_set2.parameters()):
             assert param1.shape == param2.shape
             data = torch.randn_like(param1)
-            param1.data = data
-            param2.data = data
+            param1.data = data.clone()
+            param2.data = data.clone()
     return transcoder_set1, transcoder_set2
 
 
