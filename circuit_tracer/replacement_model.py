@@ -231,14 +231,14 @@ class ReplacementModel(TransformerBridge):
             return result
 
         # add feature input hook
-        input_hook_parts = _rewrite_hook(self.feature_input_hook).split(".")
+        input_hook_parts = self.feature_input_hook.split(".")
         subblock = block
         for part in input_hook_parts:
             subblock = getattr(subblock, part)
         subblock.add_hook(cache_activations, is_permanent=True)
 
         # add feature output hook and special grad hook
-        hook_out_str = _rewrite_hook(self.original_feature_output_hook)
+        hook_out_str = self.original_feature_output_hook
         output_hook_parts = hook_out_str.split(".")
         subblock = block
         for part in output_hook_parts:
@@ -427,11 +427,11 @@ class ReplacementModel(TransformerBridge):
         tokens = tokens.unsqueeze(0)
 
         mlp_in_cache, mlp_in_caching_hooks, _ = self.get_caching_hooks(
-            lambda name: _rewrite_hook(self.feature_input_hook) in name
+            lambda name: self.feature_input_hook in name
         )
 
         mlp_out_cache, mlp_out_caching_hooks, _ = self.get_caching_hooks(
-            lambda name: _rewrite_hook(self.feature_output_hook) in name
+            lambda name: self.feature_output_hook in name
         )
         # Ignoring the type error below, but I'm not sure if it's significant
         logits = self.run_with_hooks(tokens, fwd_hooks=mlp_in_caching_hooks + mlp_out_caching_hooks)  # type: ignore
@@ -484,23 +484,21 @@ class ReplacementModel(TransformerBridge):
             if set(range(self.cfg.n_layers)).issubset(set(constrained_layers)):
                 hookpoints_to_freeze.append("hook_scale")
             # Freeze both the forward MLP output and the grad proxy hook
-            hookpoints_to_freeze.append(_rewrite_hook(self.original_feature_output_hook))
-            hookpoints_to_freeze.append(_rewrite_hook(self.feature_output_hook))
+            hookpoints_to_freeze.append(self.original_feature_output_hook)
+            hookpoints_to_freeze.append(self.feature_output_hook)
             if self.skip_transcoder:
-                hookpoints_to_freeze.append(_rewrite_hook(self.feature_input_hook))
+                hookpoints_to_freeze.append(self.feature_input_hook)
 
         # only freeze outputs in constrained range
         selected_hook_points = []
-        rewritten_feature_output_hook = _rewrite_hook(self.feature_output_hook)
-        rewritten_original_feature_output_hook = _rewrite_hook(self.original_feature_output_hook)
         for hook_point, hook_obj in self.hook_dict.items():
             if any(
                 hookpoint_to_freeze in hook_point for hookpoint_to_freeze in hookpoints_to_freeze
             ):
                 if (
                     (
-                        rewritten_feature_output_hook in hook_point
-                        or rewritten_original_feature_output_hook in hook_point
+                        self.feature_output_hook in hook_point
+                        or self.original_feature_output_hook in hook_point
                     )
                     and constrained_layers
                     and hook_obj.layer() not in constrained_layers
@@ -527,11 +525,10 @@ class ReplacementModel(TransformerBridge):
             )
             return cached_values
 
-        rewritten_feature_input_hook = _rewrite_hook(self.feature_input_hook)
         fwd_hooks = [
             (hookpoint, freeze_hook)
             for hookpoint in freeze_cache.keys()
-            if rewritten_feature_input_hook not in hookpoint
+            if self.feature_input_hook not in hookpoint
         ]
 
         if not (constrained_layers and self.skip_transcoder):
@@ -689,10 +686,9 @@ class ReplacementModel(TransformerBridge):
             return new_acts
 
         # For forward-time interventions, target the forward MLP output hook
-        rewritten_output_hook = _rewrite_hook(self.original_feature_output_hook)
         delta_hooks = [
             (
-                f"blocks.{layer}.{rewritten_output_hook}",
+                f"blocks.{layer}.{self.original_feature_output_hook}",
                 partial(calculate_delta_hook, layer=layer, layer_interventions=layer_interventions),
             )
             for layer, layer_interventions in interventions_by_layer.items()
@@ -700,7 +696,10 @@ class ReplacementModel(TransformerBridge):
 
         intervention_range = constrained_layers if constrained_layers else range(self.cfg.n_layers)
         intervention_hooks = [
-            (f"blocks.{layer}.{rewritten_output_hook}", partial(intervention_hook, layer=layer))
+            (
+                f"blocks.{layer}.{self.original_feature_output_hook}",
+                partial(intervention_hook, layer=layer),
+            )
             for layer in range(self.cfg.n_layers)
         ]
 
