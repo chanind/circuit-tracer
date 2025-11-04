@@ -146,9 +146,11 @@ class ReplacementModel(TransformerBridge):
         transcoder_set.to(self.cfg.device, self.cfg.dtype)  # type: ignore
 
         self.transcoders = transcoder_set
-        self.feature_input_hook = transcoder_set.feature_input_hook
-        self.original_feature_output_hook = transcoder_set.feature_output_hook
-        self.feature_output_hook = transcoder_set.feature_output_hook + ".hook_out_grad"
+        self.feature_input_hook = _rewrite_hook(transcoder_set.feature_input_hook)
+        self.original_feature_output_hook = _rewrite_hook(transcoder_set.feature_output_hook)
+        self.feature_output_hook = _rewrite_hook(
+            transcoder_set.feature_output_hook + ".hook_out_grad"
+        )
         self.skip_transcoder = transcoder_set.skip_connection
         self.scan = transcoder_set.scan
 
@@ -457,7 +459,11 @@ class ReplacementModel(TransformerBridge):
         )
 
     def setup_intervention_with_freeze(
-        self, inputs: str | torch.Tensor, constrained_layers: range | None = None
+        self,
+        inputs: str | torch.Tensor,
+        constrained_layers: range | None = None,
+        *,
+        apply_activation_function: bool = True,
     ) -> tuple[torch.Tensor, list[tuple[str, Callable]]]:
         """Sets up an intervention with either frozen attention + LayerNorm(default) or frozen
         attention, LayerNorm, and MLPs, for constrained layers
@@ -477,6 +483,8 @@ class ReplacementModel(TransformerBridge):
         if constrained_layers:
             if set(range(self.cfg.n_layers)).issubset(set(constrained_layers)):
                 hookpoints_to_freeze.append("hook_scale")
+            # Freeze both the forward MLP output and the grad proxy hook
+            hookpoints_to_freeze.append(_rewrite_hook(self.original_feature_output_hook))
             hookpoints_to_freeze.append(_rewrite_hook(self.feature_output_hook))
             if self.skip_transcoder:
                 hookpoints_to_freeze.append(_rewrite_hook(self.feature_input_hook))
@@ -484,12 +492,16 @@ class ReplacementModel(TransformerBridge):
         # only freeze outputs in constrained range
         selected_hook_points = []
         rewritten_feature_output_hook = _rewrite_hook(self.feature_output_hook)
+        rewritten_original_feature_output_hook = _rewrite_hook(self.original_feature_output_hook)
         for hook_point, hook_obj in self.hook_dict.items():
             if any(
                 hookpoint_to_freeze in hook_point for hookpoint_to_freeze in hookpoints_to_freeze
             ):
                 if (
-                    rewritten_feature_output_hook in hook_point
+                    (
+                        rewritten_feature_output_hook in hook_point
+                        or rewritten_original_feature_output_hook in hook_point
+                    )
                     and constrained_layers
                     and hook_obj.layer() not in constrained_layers
                 ):
@@ -500,7 +512,9 @@ class ReplacementModel(TransformerBridge):
             names_filter=lambda name: name in selected_hook_points
         )
 
-        original_activations, activation_caching_hooks = self._get_activation_caching_hooks()
+        original_activations, activation_caching_hooks = self._get_activation_caching_hooks(
+            apply_activation_function=apply_activation_function
+        )
         # Ignoring the type error below, but I'm not sure if it's significant
         self.run_with_hooks(inputs, fwd_hooks=cache_hooks + activation_caching_hooks)  # type: ignore
 
@@ -593,7 +607,9 @@ class ReplacementModel(TransformerBridge):
             n_pos = 1
         elif (freeze_attention or constrained_layers) and interventions:
             original_activations, freeze_hooks = self.setup_intervention_with_freeze(
-                inputs, constrained_layers=constrained_layers
+                inputs,
+                constrained_layers=constrained_layers,
+                apply_activation_function=apply_activation_function,
             )
             n_pos = original_activations.size(1)
         else:
@@ -620,6 +636,12 @@ class ReplacementModel(TransformerBridge):
             if constrained_layers:
                 # base deltas on original activations; don't let effects propagate
                 transcoder_activations = original_activations[layer]
+                # Match legacy behavior: even when apply_activation_function=False,
+                # deltas for constrained layers are computed in post-activation space.
+                if not apply_activation_function:
+                    transcoder_activations = self.transcoders.apply_activation_function(
+                        layer, transcoder_activations.unsqueeze(0)
+                    ).squeeze(0)
             else:
                 # recompute deltas based on current activations
                 transcoder_activations = (
@@ -666,9 +688,11 @@ class ReplacementModel(TransformerBridge):
             layer_deltas[layer] *= 0  # clearing this is important for multi-token generation
             return new_acts
 
+        # For forward-time interventions, target the forward MLP output hook
+        rewritten_output_hook = _rewrite_hook(self.original_feature_output_hook)
         delta_hooks = [
             (
-                f"blocks.{layer}.{self.feature_output_hook}",
+                f"blocks.{layer}.{rewritten_output_hook}",
                 partial(calculate_delta_hook, layer=layer, layer_interventions=layer_interventions),
             )
             for layer, layer_interventions in interventions_by_layer.items()
@@ -676,7 +700,7 @@ class ReplacementModel(TransformerBridge):
 
         intervention_range = constrained_layers if constrained_layers else range(self.cfg.n_layers)
         intervention_hooks = [
-            (f"blocks.{layer}.{self.feature_output_hook}", partial(intervention_hook, layer=layer))
+            (f"blocks.{layer}.{rewritten_output_hook}", partial(intervention_hook, layer=layer))
             for layer in range(self.cfg.n_layers)
         ]
 
