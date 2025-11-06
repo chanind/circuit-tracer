@@ -10,6 +10,8 @@ from circuit_tracer import Graph, ReplacementModel, attribute
 from circuit_tracer.transcoder import SingleLayerTranscoder, TranscoderSet
 from circuit_tracer.transcoder.activation_functions import JumpReLU
 from circuit_tracer.utils import get_default_device
+from tests._comparison.attribution.attribute import attribute as legacy_attribute
+from tests._comparison.replacement_model import ReplacementModel as LegacyReplacementModel
 
 
 def verify_token_and_error_edges(
@@ -305,6 +307,63 @@ def test_large_gemma_model():
 def test_gemma_2_2b():
     s = "The National Digital Analytics Group (ND"
     verify_gemma_2_2b(s)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_bridge_vs_legacy_gemma_2_2b():
+    """Test Gemma 2 2B attribution comparing bridge vs legacy implementations."""
+    prompt = "The National Digital Analytics Group (ND"
+
+    # Load bridge model (new implementation)
+    bridge_model = ReplacementModel.boot_transformers("google/gemma-2-2b", "gemma")
+
+    # Load legacy model (old implementation)
+    legacy_model = LegacyReplacementModel.from_pretrained("google/gemma-2-2b", "gemma")
+
+    # Run attribution on both (with zero softcap to avoid logit differences)
+    with bridge_model.zero_softcap():
+        bridge_graph = attribute(prompt, bridge_model)
+
+    with legacy_model.zero_softcap():
+        legacy_graph = legacy_attribute(prompt, legacy_model)
+
+    # Check if active features match
+    assert torch.allclose(bridge_graph.active_features, legacy_graph.active_features), (
+        "Active features differ!"
+    )
+
+    # Check if activation values match
+    assert torch.allclose(
+        bridge_graph.activation_values, legacy_graph.activation_values, atol=1e-2, rtol=1e-2
+    ), "Activation values differ!"
+
+    # Check if adjacency matrices match
+    diff = (bridge_graph.adjacency_matrix - legacy_graph.adjacency_matrix).abs()
+    max_diff = diff.max()
+    mean_diff = diff.mean()
+
+    # Allow for numerical precision differences due to different computation paths
+    assert torch.allclose(
+        bridge_graph.adjacency_matrix, legacy_graph.adjacency_matrix, atol=0.05, rtol=0.05
+    ), f"Adjacency matrices differ! Max diff: {max_diff:.6e}, Mean diff: {mean_diff:.6e}"
+
+    # Verify feature edges for both (with zero softcap)
+    n_active = len(bridge_graph.active_features)
+    n_samples = min(100, n_active)
+
+    with legacy_model.zero_softcap():
+        verify_feature_edges(
+            legacy_model,  # type: ignore
+            legacy_graph,
+            n_samples=n_samples,
+        )
+
+    with bridge_model.zero_softcap():
+        verify_feature_edges(
+            bridge_model,
+            bridge_graph,
+            n_samples=n_samples,
+        )
 
 
 # def test_gemma_2_2b_clt():
