@@ -462,8 +462,6 @@ class ReplacementModel(TransformerBridge):
         self,
         inputs: str | torch.Tensor,
         constrained_layers: range | None = None,
-        *,
-        apply_activation_function: bool = True,
     ) -> tuple[torch.Tensor, list[tuple[str, Callable]]]:
         """Sets up an intervention with either frozen attention + LayerNorm(default) or frozen
         attention, LayerNorm, and MLPs, for constrained layers
@@ -483,8 +481,6 @@ class ReplacementModel(TransformerBridge):
         if constrained_layers:
             if set(range(self.cfg.n_layers)).issubset(set(constrained_layers)):
                 hookpoints_to_freeze.append("hook_scale")
-            # Freeze both the forward MLP output and the grad proxy hook
-            hookpoints_to_freeze.append(self.original_feature_output_hook)
             hookpoints_to_freeze.append(self.feature_output_hook)
             if self.skip_transcoder:
                 hookpoints_to_freeze.append(self.feature_input_hook)
@@ -496,10 +492,7 @@ class ReplacementModel(TransformerBridge):
                 hookpoint_to_freeze in hook_point for hookpoint_to_freeze in hookpoints_to_freeze
             ):
                 if (
-                    (
-                        self.feature_output_hook in hook_point
-                        or self.original_feature_output_hook in hook_point
-                    )
+                    (self.feature_output_hook in hook_point)
                     and constrained_layers
                     and hook_obj.layer() not in constrained_layers
                 ):
@@ -510,9 +503,7 @@ class ReplacementModel(TransformerBridge):
             names_filter=lambda name: name in selected_hook_points
         )
 
-        original_activations, activation_caching_hooks = self._get_activation_caching_hooks(
-            apply_activation_function=apply_activation_function
-        )
+        original_activations, activation_caching_hooks = self._get_activation_caching_hooks()
         # Ignoring the type error below, but I'm not sure if it's significant
         self.run_with_hooks(inputs, fwd_hooks=cache_hooks + activation_caching_hooks)  # type: ignore
 
@@ -606,7 +597,6 @@ class ReplacementModel(TransformerBridge):
             original_activations, freeze_hooks = self.setup_intervention_with_freeze(
                 inputs,
                 constrained_layers=constrained_layers,
-                apply_activation_function=apply_activation_function,
             )
             n_pos = original_activations.size(1)
         else:
