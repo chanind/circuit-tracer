@@ -3,6 +3,7 @@ Attribution context for managing hooks during attribution computation.
 """
 
 import contextlib
+import weakref
 from collections.abc import Callable
 from functools import partial
 from typing import TYPE_CHECKING
@@ -75,14 +76,10 @@ class AttributionContext:
     def _caching_hooks(self, feature_input_hook: str) -> list[tuple[str, Callable]]:
         """Return hooks that store residual activations layer-by-layer."""
 
-        # Note: Using self directly instead of weakref.proxy(self) to avoid
-        # "weakly-referenced object no longer exists" errors if context is GC'd
-        # while hooks are still registered (which can happen due to TransformerBridge bugs).
-        # The circular reference is acceptable since hooks should be removed by the
-        # context manager, which will break the cycle.
+        proxy = weakref.proxy(self)
 
         def _cache(acts: torch.Tensor, hook: HookPoint, *, layer: int) -> torch.Tensor:
-            self._resid_activations[layer] = acts
+            proxy._resid_activations[layer] = acts
             return acts
 
         hooks = [
@@ -104,15 +101,10 @@ class AttributionContext:
         The hook computes A_{s->t} and writes the result into an in-place buffer row.
         """
 
-        # Note: Using self directly instead of weakref.proxy(self) to avoid
-        # "weakly-referenced object no longer exists" errors if context is GC'd
-        # while hooks are still registered (which can happen due to TransformerBridge bugs).
+        proxy = weakref.proxy(self)
 
         def _hook_fn(grads: torch.Tensor, hook: HookPoint) -> None:
-            assert self._batch_buffer is not None, (
-                "Batch buffer must be initialized before hook is called"
-            )
-            self._batch_buffer[write_index] += einsum(
+            proxy._batch_buffer[write_index] += einsum(
                 grads.to(output_vecs.dtype)[read_index],
                 output_vecs,
                 "batch position d_model, position d_model -> position batch",
