@@ -6,6 +6,8 @@ from transformers import AutoTokenizer, LlamaConfig, LlamaForCausalLM
 from circuit_tracer import ReplacementModel, attribute
 from circuit_tracer.transcoder import SingleLayerTranscoder, TranscoderSet
 from circuit_tracer.transcoder.activation_functions import TopK
+from tests._comparison.attribution.attribute import attribute as legacy_attribute
+from tests._comparison.replacement_model import ReplacementModel as LegacyReplacementModel
 from tests.test_attributions_gemma import verify_feature_edges, verify_token_and_error_edges
 
 
@@ -120,3 +122,54 @@ def test_large_llama_model():
 def test_llama_3_2_1b():
     s = "The National Digital Analytics Group (ND"
     verify_llama_3_2_1b(s)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_bridge_vs_legacy_llama_3_2_1b():
+    """Test Llama 3.2 1B attribution comparing bridge vs legacy implementations."""
+    prompt = "The National Digital Analytics Group (ND"
+
+    # Load bridge model (new implementation)
+    bridge_model = ReplacementModel.boot_transformers("meta-llama/Llama-3.2-1B", "llama")
+
+    # Load legacy model (old implementation)
+    legacy_model = LegacyReplacementModel.from_pretrained("meta-llama/Llama-3.2-1B", "llama")
+
+    # Run attribution on both
+    bridge_graph = attribute(prompt, bridge_model, batch_size=128)
+    legacy_graph = legacy_attribute(prompt, legacy_model, batch_size=128)
+
+    # Check if active features match
+    assert torch.allclose(bridge_graph.active_features, legacy_graph.active_features), (
+        "Active features differ!"
+    )
+
+    # Check if activation values match
+    assert torch.allclose(
+        bridge_graph.activation_values, legacy_graph.activation_values, atol=1e-2, rtol=1e-2
+    ), "Activation values differ!"
+
+    # Check if adjacency matrices match
+    diff = (bridge_graph.adjacency_matrix - legacy_graph.adjacency_matrix).abs()
+    max_diff = diff.max()
+    mean_diff = diff.mean()
+
+    # Allow for numerical precision differences due to different computation paths
+    assert torch.allclose(
+        bridge_graph.adjacency_matrix, legacy_graph.adjacency_matrix, atol=0.05, rtol=0.05
+    ), f"Adjacency matrices differ! Max diff: {max_diff:.6e}, Mean diff: {mean_diff:.6e}"
+
+    # Verify feature edges for both
+    n_active = len(bridge_graph.active_features)
+    n_samples = min(100, n_active)
+
+    verify_feature_edges(
+        legacy_model,  # type: ignore
+        legacy_graph,
+        n_samples=n_samples,
+    )
+    verify_feature_edges(
+        bridge_model,
+        bridge_graph,
+        n_samples=n_samples,
+    )
