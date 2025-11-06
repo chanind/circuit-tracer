@@ -178,19 +178,19 @@ class ReplacementModel(TransformerBridge):
         self.ln_final.hook_scale.add_hook(stop_gradient, is_permanent=True)  # type: ignore
 
         for name, param in self.named_parameters():
-            # If I don't skip these, I get the following error:
-            #  RuntimeError: you can only change requires_grad flags of leaf variables.
+            # for reasons I don't understand, if I don't skip attn then test_attribution_clt.py fails
             if "attn." in name:
                 continue
-            if "W_U" in name:
-                continue
-            param.requires_grad = False
+            if param.is_leaf:
+                param.requires_grad = False
 
         def enable_gradient(tensor, hook):
             tensor.requires_grad = True
             return tensor
 
         self.embed.hook_out.add_hook(enable_gradient, is_permanent=True)
+        # needed to pick up on newly added hooks by _configure_skip_connection
+        self._scan_existing_hooks(self, "")
 
     def _configure_skip_connection(self, layer: int, transcoder):
         block = self.blocks[layer]
