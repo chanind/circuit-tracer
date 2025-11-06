@@ -1,3 +1,5 @@
+import logging
+import os
 import warnings
 from collections import defaultdict
 from collections.abc import Callable
@@ -9,14 +11,21 @@ import torch.nn.functional as F
 from transformer_lens.config import TransformerBridgeConfig
 from transformer_lens.factories.architecture_adapter_factory import ArchitectureAdapterFactory
 from transformer_lens.hook_points import HookPoint
-from transformer_lens.model_bridge import TransformerBridge
+from transformer_lens.model_bridge import ArchitectureAdapter, TransformerBridge
 from transformer_lens.model_bridge.sources.transformers import (
-    boot,
     determine_architecture_from_hf_config,
+    get_hf_model_class_for_architecture,
     map_default_transformer_lens_config,
+    setup_tokenizer,
+)
+from transformer_lens.supported_models import MODEL_ALIASES
+from transformer_lens.utils import get_device
+from transformers import (
+    AutoConfig,
+    AutoTokenizer,
+    PreTrainedTokenizerBase,
 )
 from transformers.modeling_utils import PreTrainedModel
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from circuit_tracer.attribution.context import AttributionContext
 from circuit_tracer.transcoder import TranscoderSet
@@ -94,16 +103,14 @@ class ReplacementModel(TransformerBridge):
         Returns:
             ReplacementModel: The loaded ReplacementModel
         """
-        bridge_model = boot(
+        hf_model, adapter, tokenizer = _boot_model_components(
             model_name=model_name,
             hf_config_overrides=hf_config_overrides,
             device=device,
             dtype=dtype,
             tokenizer=tokenizer,
         )
-        model = cls(
-            model=bridge_model.model, tokenizer=bridge_model.tokenizer, adapter=bridge_model.adapter
-        )
+        model = cls(model=hf_model, tokenizer=tokenizer, adapter=adapter)
         model._configure_replacement_model(transcoders)
         return model
 
@@ -884,3 +891,104 @@ def _get_final_logit_softcapping(cfg: TransformerBridgeConfig) -> float | None:
     if hasattr(cfg, "final_logit_softcapping"):
         return cfg.final_logit_softcapping  # type: ignore
     return None
+
+
+# copied from transformer_lens.model_bridge.sources.transformers.boot, but modified to return the hf model
+def _boot_model_components(
+    model_name: str,
+    hf_config_overrides: dict | None = None,
+    device: str | torch.device | None = None,
+    dtype: torch.dtype = torch.float32,
+    tokenizer: PreTrainedTokenizerBase | None = None,
+) -> tuple[PreTrainedModel, ArchitectureAdapter, PreTrainedTokenizerBase]:
+    """Boot a model from HuggingFace.
+
+    Args:
+        model_name: The name of the model to load.
+        hf_config_overrides: Optional overrides applied to the HuggingFace config before model load.
+        device: The device to use. If None, will be determined automatically.
+        dtype: The dtype to use for the model.
+        tokenizer: Optional pre-initialized tokenizer to use; if not provided one will be created.
+
+    Returns:
+        The bridge to the loaded model.
+    """
+    # Lazy import to avoid circular import
+    from transformer_lens.factories.architecture_adapter_factory import (
+        ArchitectureAdapterFactory,
+    )
+
+    # MODEL_ALIASES is a dict of {official_name: [alias1, alias2, ...]}
+    # Check if model_name that the user passed is an alias, and if so, use the official name
+    for official_name, aliases in MODEL_ALIASES.items():
+        if model_name in aliases:
+            logging.warning(
+                f"DEPRECATED: You are using a deprecated, model_name alias '{model_name}'. TransformerLens will now load the official transformers model name, '{official_name}' instead.\n Please update your code to use the official name by changing model_name from '{model_name}' to '{official_name}'.\nSince TransformerLens v3, all model names should be the official transformers model names.\nThe aliases will be removed in the next version of TransformerLens, so please do the update now."
+            )
+            model_name = official_name
+            break
+
+    hf_config = AutoConfig.from_pretrained(model_name, output_attentions=True)
+
+    # Apply config variables to hf_config before selecting adapter
+    if hf_config_overrides:
+        hf_config.__dict__.update(hf_config_overrides)
+
+    # Apply HuggingFace to TransformerLens config mapping
+    tl_config = map_default_transformer_lens_config(hf_config)
+
+    architecture = determine_architecture_from_hf_config(hf_config)
+
+    # Convert to TransformerBridgeConfig with unified architecture
+    bridge_config = TransformerBridgeConfig.from_dict(tl_config.__dict__)
+    bridge_config.architecture = architecture
+    bridge_config.model_name = model_name  # Set the actual model name instead of default "custom"
+    bridge_config.dtype = dtype  # Set the dtype from the boot parameter
+
+    adapter = ArchitectureAdapterFactory.select_architecture_adapter(bridge_config)
+
+    # No device specified by user, use the best available device for the current system
+    if device is None:
+        device = get_device()
+
+    # Add device information to the config
+    adapter.cfg.device = str(device)
+
+    # Determine the correct HuggingFace model class based on architecture
+    model_class = get_hf_model_class_for_architecture(architecture)
+
+    # Load the model from HuggingFace using the appropriate model class
+    hf_model = model_class.from_pretrained(
+        model_name,
+        config=hf_config,
+        torch_dtype=dtype,
+    )
+
+    # Move model to device
+    if device is not None:
+        hf_model = hf_model.to(device)  # type: ignore
+
+    # Load the tokenizer
+    tokenizer = tokenizer
+    default_padding_side = getattr(adapter.cfg, "default_padding_side", None)
+    use_fast = getattr(adapter.cfg, "use_fast", True)
+
+    if tokenizer is not None:
+        tokenizer = setup_tokenizer(tokenizer, default_padding_side=default_padding_side)
+    else:
+        huggingface_token = os.environ.get("HF_TOKEN", "")
+        tokenizer = setup_tokenizer(
+            AutoTokenizer.from_pretrained(
+                model_name,
+                add_bos_token=True,
+                use_fast=use_fast,
+                token=huggingface_token if len(huggingface_token) > 0 else None,
+            ),
+            default_padding_side=default_padding_side,
+        )
+
+    # Set tokenizer_prepends_bos configuration
+    if tokenizer is not None:
+        adapter.cfg.tokenizer_prepends_bos = len(tokenizer.encode("")) > 0
+
+    return hf_model, adapter, tokenizer
