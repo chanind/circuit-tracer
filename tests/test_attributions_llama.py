@@ -146,7 +146,7 @@ def test_bridge_vs_legacy_llama_3_2_1b():
 
     # Check if activation values match
     assert torch.allclose(
-        bridge_graph.activation_values, legacy_graph.activation_values, atol=1e-2, rtol=1e-2
+        bridge_graph.activation_values, legacy_graph.activation_values, atol=1e-3, rtol=1e-4
     ), "Activation values differ!"
 
     # Check if adjacency matrices match
@@ -156,7 +156,7 @@ def test_bridge_vs_legacy_llama_3_2_1b():
 
     # Allow for numerical precision differences due to different computation paths
     assert torch.allclose(
-        bridge_graph.adjacency_matrix, legacy_graph.adjacency_matrix, atol=0.05, rtol=0.05
+        bridge_graph.adjacency_matrix, legacy_graph.adjacency_matrix, atol=1e-3, rtol=1e-4
     ), f"Adjacency matrices differ! Max diff: {max_diff:.6e}, Mean diff: {mean_diff:.6e}"
 
     # Verify feature edges for both
