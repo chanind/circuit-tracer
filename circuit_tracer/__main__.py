@@ -243,6 +243,7 @@ def run_attribution(args, parser):
         logging.info(f"Creating graph files with slug: {args.slug}")
         create_graph_files(
             graph_or_path=graph,  # Use the graph object directly
+            tokenizer=model_instance.tokenizer,
             slug=args.slug,
             scan=None,  # No scan argument needed
             output_path=args.graph_file_dir,
