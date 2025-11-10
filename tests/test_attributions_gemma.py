@@ -190,7 +190,7 @@ def load_dummy_gemma_model(cfg: Gemma2Config):
         transcoders, feature_input_hook="mlp.hook_in", feature_output_hook="mlp.hook_out"
     )
 
-    hf_model = Gemma2ForCausalLM(cfg)
+    hf_model = Gemma2ForCausalLM(cfg).to(get_default_device())  # type: ignore[attr-defined]
     tokenizer = AutoTokenizer.from_pretrained("gpt2")  # to avoid gated repos
     model = ReplacementModel.from_hf_model(hf_model, tokenizer, transcoder_set)
 
@@ -283,6 +283,16 @@ def verify_gemma_2_2b(s: str):
         verify_feature_edges(model, graph)
 
 
+def verify_gemma_3_1b(s: str):
+    model = ReplacementModel.boot_transformers("google/gemma-3-1b-pt", "gemma")
+    graph = attribute(s, model)
+
+    print("Changing logit softcap to 0, as the logits will otherwise be off.")
+    with model.zero_softcap():
+        verify_token_and_error_edges(model, graph)
+        verify_feature_edges(model, graph)
+
+
 def verify_gemma_2_2b_clt(s: str):
     model = ReplacementModel.boot_transformers("google/gemma-2-2b", "mntss/clt-gemma-2-2b-426k")
     graph = attribute(s, model)
@@ -307,6 +317,12 @@ def test_large_gemma_model():
 def test_gemma_2_2b():
     s = "The National Digital Analytics Group (ND"
     verify_gemma_2_2b(s)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_gemma_3_1b():
+    s = "The National Digital Analytics Group (ND"
+    verify_gemma_3_1b(s)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")

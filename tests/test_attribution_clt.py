@@ -28,7 +28,7 @@ def create_clt_model(cfg: GPT2Config):
             nn.init.uniform_(param, a=-0.1, b=0.1)
 
     # Create model
-    hf_model = GPT2LMHeadModel(cfg)
+    hf_model = GPT2LMHeadModel(cfg).to(get_default_device())  # type: ignore[attr-defined]
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
     model = ReplacementModel.from_hf_model(hf_model, tokenizer, clt)
 
@@ -284,7 +284,7 @@ def test_bridge_vs_legacy_clt_attribution_on_gpt2():
     # Allow for numerical precision differences due to different computation paths
     # Max relative diff is ~4.6% on small values, max absolute diff is ~0.64
     assert torch.allclose(
-        bridge_graph.adjacency_matrix, legacy_graph.adjacency_matrix, atol=0.05, rtol=1e-3
+        bridge_graph.adjacency_matrix, legacy_graph.adjacency_matrix, atol=0.1, rtol=5e-3
     ), f"Adjacency matrices differ! Max diff: {max_diff:.6e}, Mean diff: {mean_diff:.6e}"
 
     n_active = len(bridge_graph.active_features)

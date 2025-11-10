@@ -6,6 +6,7 @@ from transformers import AutoTokenizer, LlamaConfig, LlamaForCausalLM
 from circuit_tracer import ReplacementModel, attribute
 from circuit_tracer.transcoder import SingleLayerTranscoder, TranscoderSet
 from circuit_tracer.transcoder.activation_functions import TopK
+from circuit_tracer.utils import get_default_device
 from tests._comparison.attribution.attribute import attribute as legacy_attribute
 from tests._comparison.replacement_model import ReplacementModel as LegacyReplacementModel
 from tests.test_attributions_gemma import verify_feature_edges, verify_token_and_error_edges
@@ -26,7 +27,7 @@ def load_dummy_llama_model(cfg: LlamaConfig, k: int):
         transcoders, feature_input_hook="mlp.hook_in", feature_output_hook="mlp.hook_out"
     )
 
-    hf_model = LlamaForCausalLM(cfg)
+    hf_model = LlamaForCausalLM(cfg).to(get_default_device())  # type: ignore[attr-defined]
     tokenizer = AutoTokenizer.from_pretrained("gpt2")  # to avoid gated repos
     model = ReplacementModel.from_hf_model(hf_model, tokenizer, transcoder_set)
 

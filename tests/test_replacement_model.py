@@ -227,7 +227,6 @@ def test_bridge_gpt2_replacement_model_behaves_like_legacy_replacement_model(
     legacy_called_hooks = set(legacy_grads.keys())
     bridge_called_hooks = set(bridge_grads.keys())
 
-    breakpoint()
     # Assert that the SAME hooks are called in both models
     assert legacy_called_hooks == bridge_called_hooks, (
         f"Backward hooks called differ between models!\n"

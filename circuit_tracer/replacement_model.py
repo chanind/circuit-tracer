@@ -225,8 +225,7 @@ class ReplacementModel(TransformerBridge):
         subblock.add_hook(cache_activations, is_permanent=True)
 
         # add feature output hook and special grad hook
-        hook_out_str = self.original_feature_output_hook
-        output_hook_parts = hook_out_str.split(".")
+        output_hook_parts = self.original_feature_output_hook.split(".")
         subblock = block
         for part in output_hook_parts:
             subblock = getattr(subblock, part)
@@ -235,10 +234,6 @@ class ReplacementModel(TransformerBridge):
             partial(add_skip_connection, grad_hook=subblock.hook_out_grad),
             is_permanent=True,
         )
-        # this is super hacky, but we need this in the hook registry or hooks won't be picked up
-        name = f"blocks.{layer}.{hook_out_str}.hook_out_grad"
-        self._hook_registry[name] = subblock.hook_out_grad
-        subblock.hook_out_grad.name = name
 
     def _deduplicate_attention_buffers(self):
         """
