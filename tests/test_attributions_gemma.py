@@ -86,10 +86,22 @@ def verify_token_and_error_edges(
             atol=act_atol,
             rtol=act_rtol,
         ):
+            max_abs_idx = activation_diff.argmax()
+            max_rel_idx = activation_rel_diff.argmax()
+            expected_acts = relevant_activations + expected_activation_difference
+
             print("Activation check failed:")
-            print(f"  Max abs diff: {activation_diff.max():.6e}")
+            print(
+                f"  Max abs diff: {activation_diff.max():.6e} "
+                f"({new_relevant_activations[max_abs_idx].item():.6e} vs "
+                f"{expected_acts[max_abs_idx].item():.6e})"
+            )
             print(f"  Mean abs diff: {activation_diff.mean():.6e}")
-            print(f"  Max rel diff: {activation_rel_diff.max():.6e}")
+            print(
+                f"  Max rel diff: {activation_rel_diff.max():.6e} "
+                f"({new_relevant_activations[max_rel_idx].item():.6e} vs "
+                f"{expected_acts[max_rel_idx].item():.6e})"
+            )
             print(f"  Mean rel diff: {activation_rel_diff.mean():.6e}")
             print(f"  Tolerance: atol={act_atol}, rtol={act_rtol}")
 
@@ -106,10 +118,22 @@ def verify_token_and_error_edges(
             atol=logit_atol,
             rtol=logit_rtol,
         ):
+            max_abs_idx = logit_diff.argmax()
+            max_rel_idx = logit_rel_diff.argmax()
+            expected_logits = demeaned_relevant_logits + expected_logit_difference
+
             print("Logit check failed:")
-            print(f"  Max abs diff: {logit_diff.max():.6e}")
+            print(
+                f"  Max abs diff: {logit_diff.max():.6e} "
+                f"({new_demeaned_relevant_logits[max_abs_idx].item():.6e} vs "
+                f"{expected_logits[max_abs_idx].item():.6e})"
+            )
             print(f"  Mean abs diff: {logit_diff.mean():.6e}")
-            print(f"  Max rel diff: {logit_rel_diff.max():.6e}")
+            print(
+                f"  Max rel diff: {logit_rel_diff.max():.6e} "
+                f"({new_demeaned_relevant_logits[max_rel_idx].item():.6e} vs "
+                f"{expected_logits[max_rel_idx].item():.6e})"
+            )
             print(f"  Mean rel diff: {logit_rel_diff.mean():.6e}")
             print(f"  Tolerance: atol={logit_atol}, rtol={logit_rtol}")
 
@@ -214,10 +238,22 @@ def verify_feature_edges(
             atol=act_atol,
             rtol=act_rtol,
         ):
+            max_abs_idx = activation_diff.argmax()
+            max_rel_idx = activation_rel_diff.argmax()
+            expected_acts = relevant_activations + expected_activation_difference
+
             print("Activation check failed:")
-            print(f"  Max abs diff: {activation_diff.max():.6e}")
+            print(
+                f"  Max abs diff: {activation_diff.max():.6e} "
+                f"({new_relevant_activations[max_abs_idx].item():.6e} vs "
+                f"{expected_acts[max_abs_idx].item():.6e})"
+            )
             print(f"  Mean abs diff: {activation_diff.mean():.6e}")
-            print(f"  Max rel diff: {activation_rel_diff.max():.6e}")
+            print(
+                f"  Max rel diff: {activation_rel_diff.max():.6e} "
+                f"({new_relevant_activations[max_rel_idx].item():.6e} vs "
+                f"{expected_acts[max_rel_idx].item():.6e})"
+            )
             print(f"  Mean rel diff: {activation_rel_diff.mean():.6e}")
             print(f"  Tolerance: atol={act_atol}, rtol={act_rtol}")
 
@@ -234,10 +270,22 @@ def verify_feature_edges(
             atol=logit_atol,
             rtol=logit_rtol,
         ):
+            max_abs_idx = logit_diff.argmax()
+            max_rel_idx = logit_rel_diff.argmax()
+            expected_logits = demeaned_relevant_logits + expected_logit_difference
+
             print("Logit check failed:")
-            print(f"  Max abs diff: {logit_diff.max():.6e}")
+            print(
+                f"  Max abs diff: {logit_diff.max():.6e} "
+                f"({new_demeaned_relevant_logits[max_abs_idx].item():.6e} vs "
+                f"{expected_logits[max_abs_idx].item():.6e})"
+            )
             print(f"  Mean abs diff: {logit_diff.mean():.6e}")
-            print(f"  Max rel diff: {logit_rel_diff.max():.6e}")
+            print(
+                f"  Max rel diff: {logit_rel_diff.max():.6e} "
+                f"({new_demeaned_relevant_logits[max_rel_idx].item():.6e} vs "
+                f"{expected_logits[max_rel_idx].item():.6e})"
+            )
             print(f"  Mean rel diff: {logit_rel_diff.mean():.6e}")
             print(f"  Tolerance: atol={logit_atol}, rtol={logit_rtol}")
 
