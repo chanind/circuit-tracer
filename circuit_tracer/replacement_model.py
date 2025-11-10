@@ -415,7 +415,6 @@ class ReplacementModel(TransformerBridge):
         mlp_out_cache, mlp_out_caching_hooks, _ = self.get_caching_hooks(
             lambda name: self.feature_output_hook in name
         )
-        # Ignoring the type error below, but I'm not sure if it's significant
         logits = self.run_with_hooks(tokens, fwd_hooks=mlp_in_caching_hooks + mlp_out_caching_hooks)  # type: ignore
 
         mlp_in_cache = torch.cat(list(mlp_in_cache.values()), dim=0)
@@ -441,9 +440,7 @@ class ReplacementModel(TransformerBridge):
         )
 
     def setup_intervention_with_freeze(
-        self,
-        inputs: str | torch.Tensor,
-        constrained_layers: range | None = None,
+        self, inputs: str | torch.Tensor, constrained_layers: range | None = None
     ) -> tuple[torch.Tensor, list[tuple[str, Callable]]]:
         """Sets up an intervention with either frozen attention + LayerNorm(default) or frozen
         attention, LayerNorm, and MLPs, for constrained layers
@@ -474,7 +471,7 @@ class ReplacementModel(TransformerBridge):
                 hookpoint_to_freeze in hook_point for hookpoint_to_freeze in hookpoints_to_freeze
             ):
                 if (
-                    (self.feature_output_hook in hook_point)
+                    self.feature_output_hook in hook_point
                     and constrained_layers
                     and hook_obj.layer() not in constrained_layers
                 ):
@@ -486,7 +483,6 @@ class ReplacementModel(TransformerBridge):
         )
 
         original_activations, activation_caching_hooks = self._get_activation_caching_hooks()
-        # Ignoring the type error below, but I'm not sure if it's significant
         self.run_with_hooks(inputs, fwd_hooks=cache_hooks + activation_caching_hooks)  # type: ignore
 
         def freeze_hook(activations, hook):
@@ -654,7 +650,7 @@ class ReplacementModel(TransformerBridge):
         # For forward-time interventions, target the forward MLP output hook
         delta_hooks = [
             (
-                f"blocks.{layer}.{self.original_feature_output_hook}",
+                f"blocks.{layer}.{self.feature_output_hook}",
                 partial(calculate_delta_hook, layer=layer, layer_interventions=layer_interventions),
             )
             for layer, layer_interventions in interventions_by_layer.items()
@@ -663,7 +659,7 @@ class ReplacementModel(TransformerBridge):
         intervention_range = constrained_layers if constrained_layers else range(self.cfg.n_layers)
         intervention_hooks = [
             (
-                f"blocks.{layer}.{self.original_feature_output_hook}",
+                f"blocks.{layer}.{self.feature_output_hook}",
                 partial(intervention_hook, layer=layer),
             )
             for layer in range(self.cfg.n_layers)
