@@ -86,7 +86,7 @@ def verify_token_and_error_edges(
             atol=act_atol,
             rtol=act_rtol,
         ):
-            print(f"Activation check failed:")
+            print("Activation check failed:")
             print(f"  Max abs diff: {activation_diff.max():.6e}")
             print(f"  Mean abs diff: {activation_diff.mean():.6e}")
             print(f"  Max rel diff: {activation_rel_diff.max():.6e}")
@@ -106,7 +106,7 @@ def verify_token_and_error_edges(
             atol=logit_atol,
             rtol=logit_rtol,
         ):
-            print(f"Logit check failed:")
+            print("Logit check failed:")
             print(f"  Max abs diff: {logit_diff.max():.6e}")
             print(f"  Mean abs diff: {logit_diff.mean():.6e}")
             print(f"  Max rel diff: {logit_rel_diff.max():.6e}")
@@ -214,7 +214,7 @@ def verify_feature_edges(
             atol=act_atol,
             rtol=act_rtol,
         ):
-            print(f"Activation check failed:")
+            print("Activation check failed:")
             print(f"  Max abs diff: {activation_diff.max():.6e}")
             print(f"  Mean abs diff: {activation_diff.mean():.6e}")
             print(f"  Max rel diff: {activation_rel_diff.max():.6e}")
@@ -234,7 +234,7 @@ def verify_feature_edges(
             atol=logit_atol,
             rtol=logit_rtol,
         ):
-            print(f"Logit check failed:")
+            print("Logit check failed:")
             print(f"  Max abs diff: {logit_diff.max():.6e}")
             print(f"  Mean abs diff: {logit_diff.mean():.6e}")
             print(f"  Max rel diff: {logit_rel_diff.max():.6e}")

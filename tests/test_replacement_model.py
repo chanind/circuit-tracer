@@ -603,6 +603,7 @@ def test_bridge_feature_intervention_with_frozen_attention_behaves_like_legacy(
     assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
         f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
     )
+    assert bridge_acts is not None
     assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
         f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
     )
@@ -635,6 +636,7 @@ def test_bridge_feature_intervention_without_frozen_attention_behaves_like_legac
     assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
         f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
     )
+    assert bridge_acts is not None
     assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
         f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
     )
@@ -670,6 +672,7 @@ def test_bridge_feature_intervention_with_constrained_layers_behaves_like_legacy
     assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
         f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
     )
+    assert bridge_acts is not None
     assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
         f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
     )
@@ -693,6 +696,7 @@ def test_bridge_feature_intervention_empty_interventions_behaves_like_legacy(
     assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
         f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
     )
+    assert bridge_acts is not None
     assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
         f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
     )
@@ -734,6 +738,7 @@ def test_bridge_feature_intervention_with_constrained_layers_and_no_activation_f
     assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
         f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
     )
+    assert bridge_acts is not None
     assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
         f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
     )
@@ -774,6 +779,7 @@ def test_bridge_clt_feature_intervention_with_frozen_attention_behaves_like_lega
     )
 
     # Verify activation caches match
+    assert bridge_acts is not None
     assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
         f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
     )
@@ -806,6 +812,7 @@ def test_bridge_clt_feature_intervention_without_frozen_attention_behaves_like_l
     assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
         f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
     )
+    assert bridge_acts is not None
     assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
         f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
     )
@@ -842,6 +849,7 @@ def test_bridge_clt_feature_intervention_with_constrained_layers_behaves_like_le
     assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
         f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
     )
+    assert bridge_acts is not None
     assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
         f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
     )
@@ -865,6 +873,7 @@ def test_bridge_clt_feature_intervention_empty_interventions_behaves_like_legacy
     assert torch.allclose(bridge_logits, legacy_logits, atol=1e-2, rtol=1e-2), (
         f"Logits differ by max {(bridge_logits - legacy_logits).abs().max()}"
     )
+    assert bridge_acts is not None
     assert torch.allclose(bridge_acts, legacy_acts, atol=1e-2, rtol=1e-2), (
         f"Activations differ by max {(bridge_acts - legacy_acts).abs().max()}"
     )
