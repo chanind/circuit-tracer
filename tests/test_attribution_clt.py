@@ -49,9 +49,9 @@ def verify_feature_edges(
     graph: Graph,
     n_samples: int = 100,
     act_atol=1e-1,
-    act_rtol=1e-2,
+    act_rtol=1e-5,
     logit_atol=1e-1,
-    logit_rtol=1e-2,
+    logit_rtol=1e-5,
 ):
     """Verify that feature interventions produce the expected effects using feature_intervention
     method."""
