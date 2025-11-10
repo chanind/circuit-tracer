@@ -48,10 +48,10 @@ def verify_feature_edges(
     model: ReplacementModel,
     graph: Graph,
     n_samples: int = 100,
-    act_atol=1e-1,
+    act_atol=5e-4,
     act_rtol=1e-5,
-    logit_atol=1e-1,
-    logit_rtol=1e-5,
+    logit_atol=1e-5,
+    logit_rtol=1e-3,
 ):
     """Verify that feature interventions produce the expected effects using feature_intervention
     method."""
@@ -95,12 +95,53 @@ def verify_feature_edges(
         expected_activation_difference = expected_effects[:total_active_features]
         expected_logit_difference = expected_effects[-len(logit_tokens) :]
 
+        activation_diff = (
+            new_relevant_activations - (relevant_activations + expected_activation_difference)
+        ).abs()
+        activation_rel_diff = activation_diff / (
+            (relevant_activations + expected_activation_difference).abs() + 1e-8
+        )
+
+        logit_diff = (
+            new_demeaned_relevant_logits - (demeaned_relevant_logits + expected_logit_difference)
+        ).abs()
+        logit_rel_diff = logit_diff / (
+            (demeaned_relevant_logits + expected_logit_difference).abs() + 1e-8
+        )
+
+        if not torch.allclose(
+            new_relevant_activations,
+            relevant_activations + expected_activation_difference,
+            atol=act_atol,
+            rtol=act_rtol,
+        ):
+            print("Activation check failed:")
+            print(f"  Max abs diff: {activation_diff.max():.6e}")
+            print(f"  Mean abs diff: {activation_diff.mean():.6e}")
+            print(f"  Max rel diff: {activation_rel_diff.max():.6e}")
+            print(f"  Mean rel diff: {activation_rel_diff.mean():.6e}")
+            print(f"  Tolerance: atol={act_atol}, rtol={act_rtol}")
+
         assert torch.allclose(
             new_relevant_activations,
             relevant_activations + expected_activation_difference,
             atol=act_atol,
             rtol=act_rtol,
         )
+
+        if not torch.allclose(
+            new_demeaned_relevant_logits,
+            demeaned_relevant_logits + expected_logit_difference,
+            atol=logit_atol,
+            rtol=logit_rtol,
+        ):
+            print("Logit check failed:")
+            print(f"  Max abs diff: {logit_diff.max():.6e}")
+            print(f"  Mean abs diff: {logit_diff.mean():.6e}")
+            print(f"  Max rel diff: {logit_rel_diff.max():.6e}")
+            print(f"  Mean rel diff: {logit_rel_diff.mean():.6e}")
+            print(f"  Tolerance: atol={logit_atol}, rtol={logit_rtol}")
+
         assert torch.allclose(
             new_demeaned_relevant_logits,
             demeaned_relevant_logits + expected_logit_difference,
