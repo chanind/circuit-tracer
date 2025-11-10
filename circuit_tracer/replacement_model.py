@@ -650,7 +650,7 @@ class ReplacementModel(TransformerBridge):
         # For forward-time interventions, target the forward MLP output hook
         delta_hooks = [
             (
-                f"blocks.{layer}.{self.feature_output_hook}",
+                f"blocks.{layer}.{self.original_feature_output_hook}",
                 partial(calculate_delta_hook, layer=layer, layer_interventions=layer_interventions),
             )
             for layer, layer_interventions in interventions_by_layer.items()
@@ -659,7 +659,7 @@ class ReplacementModel(TransformerBridge):
         intervention_range = constrained_layers if constrained_layers else range(self.cfg.n_layers)
         intervention_hooks = [
             (
-                f"blocks.{layer}.{self.feature_output_hook}",
+                f"blocks.{layer}.{self.original_feature_output_hook}",
                 partial(intervention_hook, layer=layer),
             )
             for layer in range(self.cfg.n_layers)
