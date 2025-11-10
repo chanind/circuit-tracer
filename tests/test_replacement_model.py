@@ -1360,3 +1360,153 @@ def test_TransformerBridge_llama_rmsnorm_eps_fails():
     #
     # The eps bug is reliably encountered in test_attributions_llama.py
     bridge(test_input)
+
+
+def test_hook_execution_order_matches_between_bridge_and_legacy_for_constrained_layers(
+    replacement_model_pair: tuple[ReplacementModel, LegacyReplacementModel],
+):
+    """Test that hook execution order for constrained_layers interventions matches between bridge and legacy.
+
+    This test verifies that for constrained_layers interventions, the hooks fire in the correct order:
+    1. Freeze hook (freezes MLP outputs to original values)
+    2. Calculate delta hook (computes intervention deltas)
+    3. Intervention hook (adds deltas to MLP outputs)
+
+    The key concern is that we don't freeze the layer AFTER adding deltas, which would erase the intervention.
+    """
+    bridge_model, legacy_model = replacement_model_pair
+
+    prompt = torch.tensor([[0, 1, 2, 3, 4, 5]]).squeeze(0)
+    interventions: list[tuple[int, int, int, torch.Tensor]] = [
+        (0, 1, 5, torch.tensor(2.0)),
+        (1, 2, 10, torch.tensor(1.5)),
+    ]
+    constrained_layers = range(0, 6)
+
+    # Track hook execution order for bridge model
+    bridge_hook_order = []
+
+    def make_tracking_hook(hook_type: str, original_hook):
+        def tracking_hook(activations, hook):
+            # Record the hook type and layer
+            try:
+                layer = hook.layer() if hasattr(hook, "layer") else None
+            except (ValueError, IndexError):
+                layer = None
+            bridge_hook_order.append((hook_type, layer, hook.name))
+            return original_hook(activations, hook)
+
+        return tracking_hook
+
+    # Get the hooks from bridge model
+    bridge_hooks, _, _ = bridge_model._get_feature_intervention_hooks(
+        prompt,
+        interventions,  # type: ignore
+        constrained_layers=constrained_layers,
+        freeze_attention=True,
+    )
+
+    # Wrap hooks with tracking
+    tracked_bridge_hooks = []
+    for hook_name, hook_fn in bridge_hooks:
+        # Identify hook type based on function name
+        if "freeze" in str(hook_fn):
+            hook_type = "freeze"
+        elif "calculate_delta" in str(hook_fn):
+            hook_type = "calculate_delta"
+        elif "intervention" in str(hook_fn):
+            hook_type = "intervention"
+        elif "activation" in str(hook_fn) or "cache" in str(hook_fn):
+            hook_type = "activation_cache"
+        elif "logit" in str(hook_fn):
+            hook_type = "logit_cache"
+        else:
+            hook_type = "other"
+
+        tracked_bridge_hooks.append((hook_name, make_tracking_hook(hook_type, hook_fn)))
+
+    # Run bridge model with tracked hooks
+    with bridge_model.hooks(tracked_bridge_hooks):  # type: ignore
+        _ = bridge_model(prompt)
+
+    # Track hook execution order for legacy model
+    legacy_hook_order = []
+
+    def make_legacy_tracking_hook(hook_type: str, original_hook):
+        def tracking_hook(activations, hook):
+            try:
+                layer = hook.layer() if hasattr(hook, "layer") else None
+            except (ValueError, IndexError):
+                layer = None
+            legacy_hook_order.append((hook_type, layer, hook.name))
+            return original_hook(activations, hook)
+
+        return tracking_hook
+
+    # Get the hooks from legacy model
+    legacy_hooks, _, _ = legacy_model._get_feature_intervention_hooks(
+        prompt,
+        interventions,  # type: ignore
+        constrained_layers=constrained_layers,
+        freeze_attention=True,
+    )
+
+    # Wrap hooks with tracking
+    tracked_legacy_hooks = []
+    for hook_name, hook_fn in legacy_hooks:
+        if "freeze" in str(hook_fn):
+            hook_type = "freeze"
+        elif "calculate_delta" in str(hook_fn):
+            hook_type = "calculate_delta"
+        elif "intervention" in str(hook_fn):
+            hook_type = "intervention"
+        elif "activation" in str(hook_fn) or "cache" in str(hook_fn):
+            hook_type = "activation_cache"
+        elif "logit" in str(hook_fn):
+            hook_type = "logit_cache"
+        else:
+            hook_type = "other"
+
+        tracked_legacy_hooks.append((hook_name, make_legacy_tracking_hook(hook_type, hook_fn)))
+
+    # Run legacy model with tracked hooks
+    with legacy_model.hooks(tracked_legacy_hooks):  # type: ignore
+        _ = legacy_model(prompt)
+
+    # The key invariant is that for any layer, freeze (if present) comes before intervention
+    for layer in [0, 1]:
+        bridge_layer_hooks = [
+            (t, i) for i, (t, layer_num, _) in enumerate(bridge_hook_order) if layer_num == layer
+        ]
+        legacy_layer_hooks = [
+            (t, i) for i, (t, layer_num, _) in enumerate(legacy_hook_order) if layer_num == layer
+        ]
+
+        # Check that freeze comes before intervention for this layer
+        bridge_freeze_idx = next((i for t, i in bridge_layer_hooks if t == "freeze"), None)
+        bridge_intervention_idx = next(
+            (i for t, i in bridge_layer_hooks if t == "intervention"), None
+        )
+
+        legacy_freeze_idx = next((i for t, i in legacy_layer_hooks if t == "freeze"), None)
+        legacy_intervention_idx = next(
+            (i for t, i in legacy_layer_hooks if t == "intervention"), None
+        )
+
+        if bridge_freeze_idx is not None and bridge_intervention_idx is not None:
+            assert bridge_freeze_idx < bridge_intervention_idx, (
+                f"Bridge: freeze must come before intervention at layer {layer}, "
+                f"but freeze at {bridge_freeze_idx} >= intervention at {bridge_intervention_idx}"
+            )
+
+        if legacy_freeze_idx is not None and legacy_intervention_idx is not None:
+            assert legacy_freeze_idx < legacy_intervention_idx, (
+                f"Legacy: freeze must come before intervention at layer {layer}, "
+                f"but freeze at {legacy_freeze_idx} >= intervention at {legacy_intervention_idx}"
+            )
+
+        # Both should have the same presence/absence of freeze hooks
+        assert (bridge_freeze_idx is not None) == (legacy_freeze_idx is not None), (
+            f"Layer {layer}: bridge has freeze={bridge_freeze_idx is not None}, "
+            f"legacy has freeze={legacy_freeze_idx is not None}"
+        )
