@@ -605,12 +605,6 @@ class ReplacementModel(TransformerBridge):
             if constrained_layers:
                 # base deltas on original activations; don't let effects propagate
                 transcoder_activations = original_activations[layer]
-                # Match legacy behavior: even when apply_activation_function=False,
-                # deltas for constrained layers are computed in post-activation space.
-                if not apply_activation_function:
-                    transcoder_activations = self.transcoders.apply_activation_function(
-                        layer, transcoder_activations.unsqueeze(0)
-                    ).squeeze(0)
             else:
                 # recompute deltas based on current activations
                 transcoder_activations = (
